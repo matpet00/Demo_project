@@ -39,7 +39,7 @@ The exchange is named `events` and it is direct. The routing key is the queue na
 | `failed_snow_delivery` | delivery service after the third failed ServiceNow call | nobody | The message stays on the queue, and the store keeps the same status. |
 | `events.dlq` | delivery service after the third failed mail attempt | nobody | The message stays on the queue. |
 
-The screenshot shows the queues. Priority queues and `events.spam` have a delivery-service consumer. `failed_snow_delivery` and `events.dlq` have none. One message sits in `failed_snow_delivery` from a call ServiceNow did not accept.
+The screenshot shows the eight queues. Priority queues and `events.spam` have a delivery-service consumer. `failed_snow_delivery` and `events.dlq` have none. One message sits in `failed_snow_delivery` from a call ServiceNow did not accept.
 
 ![Queues in RabbitMQ](docs/images/rabbitmq.png)
 
@@ -196,7 +196,9 @@ The 202 response is the stored message. The same shape sits in the store, on the
 
 `status` then becomes `sent`, `not_processed`, or `failed_snow_delivery`. `trace` is filled for an event that went through the agent. It stays empty for a blocked user.
 
-Adding a user to the block list:
+These three calls go to the intake service. They use `X-API-Key` when `API_KEY` is set. A missing or wrong key is 401. A missing or blank `uuid` on the two POST calls is 400.
+
+Add a user:
 
 ```http
 POST /add_spammer
@@ -206,7 +208,57 @@ X-API-Key: <key>
 {"uuid":"<user uuid>","username":"<username>"}
 ```
 
-The response is 201. An empty UUID is 400. A wrong key is 401. `POST /remove_spammer` needs only `uuid` and returns 200.
+```http
+HTTP/1.1 201 Created
+Content-Type: application/json
+
+{"uuid":"<user uuid>","username":"<username>"}
+```
+
+Calling it again for the same UUID updates the username and still returns 201 with the same shape. When `username` is left out, the response has `"username": null`.
+
+Remove a user:
+
+```http
+POST /remove_spammer
+Content-Type: application/json
+X-API-Key: <key>
+
+{"uuid":"<user uuid>"}
+```
+
+```http
+HTTP/1.1 200 OK
+Content-Type: application/json
+
+{"uuid":"<user uuid>"}
+```
+
+The same 200 is returned when that UUID was not on the list.
+
+List the blocked users:
+
+```http
+GET /list_spammers
+X-API-Key: <key>
+```
+
+```http
+HTTP/1.1 200 OK
+Content-Type: application/json
+
+{
+  "spammers": [
+    {
+      "uuid": "<user uuid>",
+      "username": "<username>",
+      "created_at": "<time>"
+    }
+  ]
+}
+```
+
+An empty list is `{"spammers": []}`.
 
 A successful scripted API call in ServiceNow is 201 and a body with the event number. When the body has no number, the message stores `accepted`.
 
