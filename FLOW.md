@@ -4,14 +4,14 @@
 
 - **WSO2 API Manager 4.5.0** is the gateway. It authenticates the user and adds the user's name and UUID to the call.
 - **Python 3.11 and Quart** are the intake service and the delivery service. Both run asynchronously.
-- **Agent (AI)** reads the event description and assigns priority 1 to 5. It works in a Thought, Action, Observation loop. The model is OpenRouter `poolside/laguna-xs-2.1:free`. When the model is unavailable, a scripted agent completes the same steps.
+- **Agent (AI)** reads the event text from the inbound JSON payload and assigns priority 1 to 5. It works in a Thought, Action, Observation loop. The model is OpenRouter `poolside/laguna-xs-2.1:free`. When the model is unavailable, a scripted agent completes the same steps.
 - **RabbitMQ** carries messages between intake and delivery. The services talk to it through `aio-pika`.
 - **MySQL** stores messages and the list of blocked users.
 - **ServiceNow** receives an event into the `u_itil_event` table through a scripted API.
 - **SMTP mail** receives a notice when a blocked user's event is left unprocessed. In the demo, Mailpit catches that mail.
 - **Grafana, Loki, and Alloy** collect logs from both services. The dashboard filters by user, correlation id, and queue.
 
-A given user comes in through the gateway. The gateway authenticates that user and adds the name and UUID to the call. The intake service decides what happens from that UUID and from the text. The delivery service finishes the decision: it writes an event to ServiceNow, or it sends mail that the event was not processed.
+A given user comes in through the gateway. The gateway authenticates that user and adds the name and UUID to the call. The intake service validates the JSON event body and decides what happens from that UUID and from the event text. The delivery service maps the queued message to ServiceNow event fields, or sends mail that the event was not processed.
 
 The gateway computes the UUID as version 5 of the username. The user does not send it and cannot override it.
 
@@ -45,16 +45,16 @@ The screenshot shows the eight queues. Priority queues and `events.spam` have a 
 
 ## Use case: the user sends an event
 
-The user calls `POST /events` and sends only a description. The body has no priority.
+The user calls `POST /events` with a **JSON event payload**. Today the body carries the event text in `description` (or `short_description`). **Priority is not in the body** — ingest derives it after classification.
 
-The intake service checks that the UUID header is present and that the description is not empty. When the UUID is not on the block list, it starts the agent (AI). The agent reads the description, calls two tools, and returns priority 1 to 5. 1 is the most severe. The message goes to `priority1_queue` through `priority5_queue`, and the user receives 202.
+The intake service checks that the UUID header is present and that the payload includes non-empty event text. When the UUID is not on the block list, it starts the agent (AI). The agent reads that text, calls two tools, and returns priority 1 to 5. 1 is the most severe. The enriched message goes to `priority1_queue` through `priority5_queue`, and the caller receives **202** with the stored event envelope (id, queue, correlation id, trace when applicable).
 
-The delivery service picks the message up and creates an event in ServiceNow. Success is stored on the message as status `sent` and the event number. The same description sent ten times is ten separate events and ten writes to ServiceNow. When the UUID is already blocked, the agent does not run, the message goes to `events.spam`, and the delivery service only sends mail. The status is `not_processed`.
+The delivery service picks the message up, builds the ServiceNow event record (source, node, severity, description, message_key, additional_info, …), and posts it. Success is stored on the message as status `sent` and the event number. The **same payload posted ten times** is ten separate events and ten writes to ServiceNow (`message_key` is the message id). When the UUID is already blocked, the agent does not run, the message goes to `events.spam`, and the delivery service only sends mail. The status is `not_processed`.
 
 ```mermaid
 flowchart TD
-    call["POST /events with a description"] --> known{"Is the UUID blocked?"}
-    known -->|no| react["Agent AI reads the description"]
+    call["POST /events with JSON event payload"] --> known{"Is the UUID blocked?"}
+    known -->|no| react["Agent AI classifies event text"]
     react --> prio["Priority 1 to 5"]
     prio --> queue["Queue priorityN_queue"]
     queue --> snow["Event in ServiceNow"]
@@ -66,11 +66,11 @@ flowchart TD
 
 The agent (AI) proceeds in a Thought, Action, Observation loop and stops after six steps.
 
-1. `lookup_service` finds the service named in the description: checkout, payment, database, proxy, or latency. When nothing matches, the service is `unknown`.
-2. `classify_priority` suggests a priority from the words in the description.
+1. `lookup_service` finds the service named in the event text: checkout, payment, database, proxy, or latency. When nothing matches, the service is `unknown`.
+2. `classify_priority` suggests a priority from the words in that text.
 3. The agent confirms the priority and the intake service selects the queue.
 
-| Priority | Words in the description |
+| Priority | Words in the event text (description field) |
 | --- | --- |
 | 1 | outage, down, unavailable, critical, výpadek |
 | 2 | slow, latency, degraded |
@@ -84,7 +84,7 @@ The overview shows the queues in columns. A row with status `sent` is an event t
 
 ![Overview after events were processed](docs/images/desk.png)
 
-ServiceNow receives a record with these fields. `severity` is the priority from the agent. `message_key` is the message id, so a repeated description does not collapse into one event. ServiceNow fills in the event number, the state Ready, and the time.
+ServiceNow receives a record with these fields. `severity` is the priority from the agent. `message_key` is the message id, so a repeated inbound payload does not collapse into one event. ServiceNow fills in the event number, the state Ready, and the time.
 
 ```json
 {
@@ -112,7 +112,7 @@ On an instance without Event Management, the third call succeeds and the row lan
 
 ## Use case: the user is blocked
 
-The same user calls `POST /events` with the same body. That user's UUID is on the block list.
+The same user calls `POST /events` with the same JSON event payload. That user's UUID is on the block list.
 
 The intake service does not start the agent and does not compute a priority. The message goes to `events.spam`. The delivery service does not call ServiceNow. It sends mail with the subject `Spammer detected` and a body saying the event was not processed, plus the username, UUID, and event id. The message status is `not_processed`.
 
@@ -163,7 +163,7 @@ The gateway protects `POST /events` and adds the name and UUID there. The other 
 
 The delivery service accepts only the health checks over HTTP. It takes messages from the queues.
 
-An event call:
+**Inbound event payload** (through the gateway as `POST /desk/v1/events`):
 
 ```http
 POST /events
@@ -173,7 +173,9 @@ Content-Type: application/json
 {"description":"checkout-api outage, payments are down"}
 ```
 
-A missing UUID is 401. A missing description is 400. `short_description` is used when `description` is absent. The `X-Correlation-Id` header is stored. When it is absent, the service creates a new id.
+Optional header: `X-Correlation-Id` (stored on the message; generated when absent).
+
+Validation: a missing `X-User-Uuid` is **401**. Event text is required — empty `description` and `short_description` is **400**. `short_description` is used when `description` is absent. The OpenAPI schema is `Payload` in `openapi.yaml` (`description` / `short_description`; no priority field).
 
 The 202 response is the stored message. The same shape sits in the store, on the queue, and in the overview:
 
