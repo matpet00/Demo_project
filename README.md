@@ -6,7 +6,7 @@
 
 **Demo_project** is an **ITIL Event Management** pipeline in front of ServiceNow — not a shortcut to the Table API. Callers authenticate at **WSO2 API Manager** and post a JSON event payload; a **ReAct agent** (with a scripted fallback) reads the text and assigns priority **1–5**; **RabbitMQ** buffers the handoff; a delivery worker writes an **event** to ServiceNow or handles suppression and failures on their own queues. Identity comes from the gateway, not from the client body.
 
-The point is to show that path with the awkward cases still visible: the same payload twice is two events; a **blocked sender** never reaches ServiceNow (spam queue → mail, `not_processed`); ServiceNow errors retry and then land on **`failed_snow_delivery`** without being rewritten as incidents; the agent trace stays on the message for the board and logs. Platform setup lives in **`preparation.py`**, not in the request hot path. Deeper behaviour → **[FLOW.md](FLOW.md)**.
+The point is to show that path with the awkward cases still visible: the same payload twice is two events; a **blocked sender** is suppressed via the block list (see below); ServiceNow errors retry and then land on **`failed_snow_delivery`** without being rewritten as incidents; the agent trace stays on the message for the board and logs. Platform setup lives in **`preparation.py`**, not in the request hot path. API payloads and diagrams → **[FLOW.md](FLOW.md)** · OpenAPI → **`openapi.yaml`**.
 
 ![Event flow — Caller → WSO2 → Ingest → ReAct agent → RabbitMQ → Delivery → ServiceNow](docs/images/flow.gif)
 
@@ -113,6 +113,31 @@ Exchange `events` (direct). Routing key = queue name. Durable messages. Ingest p
 ![Queues in RabbitMQ](docs/images/rabbitmq.png)
 
 Blocked-user mail and ServiceNow failure paths (with screenshots) are walked through in [FLOW.md](FLOW.md).
+
+---
+
+## Block list — ops API and blocked `POST /events`
+
+Suppression is **not** at the gateway: WSO2 still authenticates the caller. **Ingest** checks the mediation **`X-User-Uuid`** against MySQL before running the agent.
+
+**If the UUID is blocked** and they call `POST /events` (via WSO2 or ingest with the same headers):
+
+| Step | What happens |
+| --- | --- |
+| Ingest | **202 Accepted**, message stored; **ReAct agent does not run**; `priority` stays unset; empty `trace` |
+| RabbitMQ | Publish to **`events.spam`** (not `priorityN_queue`) |
+| Delivery | **No ServiceNow**; SMTP mail subject **`Spammer detected`**; body includes username, UUID, message id |
+| Outcome | Message status **`not_processed`** |
+
+**Manage the block list** on the **ingest service** (these routes are **not** behind WSO2; operators hit ingest directly). When `API_KEY` is set in env, send **`X-API-Key`**.
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `POST` | `/add_spammer` | Block a mediation UUID (`{"uuid":"…","username":"…"}` optional) → **201** |
+| `POST` | `/remove_spammer` | Unblock (`{"uuid":"…"}`) → **200** |
+| `GET` | `/list_spammers` | List blocked rows → `{"spammers":[…]}` |
+
+`GET /board` returns recent messages **and** the block list (used by the event board UI). Full HTTP examples and JSON shapes: **[FLOW.md — Routes and payloads](FLOW.md#routes-and-payloads)** (including `add_spammer` / `remove_spammer` / `list_spammers`).
 
 ---
 
