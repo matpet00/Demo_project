@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Capture scripts/flow_animation.html to docs/images/flow.gif."""
+"""Capture docs/flow.html?capture=1 to docs/images/flow.gif."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from pathlib import Path
 from PIL import Image
 
 ROOT = Path(__file__).resolve().parents[1]
-HTML = Path(__file__).resolve().parent / "flow_animation.html"
+HTML = ROOT / "docs" / "flow.html"
 OUT = ROOT / "docs" / "images" / "flow.gif"
 
 FRAME_MS = 68
@@ -19,7 +19,7 @@ FRAME_MS = 68
 async def capture() -> tuple[list[Image.Image], list[int]]:
     from playwright.async_api import async_playwright
 
-    url = HTML.as_uri()
+    url = HTML.as_uri() + "?capture=1"
     frames: list[Image.Image] = []
     durations: list[int] = []
 

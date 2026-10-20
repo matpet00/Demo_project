@@ -1,0 +1,626 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Demo_project — interactive event flow</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,560;9..144,680&family=Inconsolata:wght@460;680&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --paper: #efe4cf;
+      --ink: #1b1712;
+      --muted: #6d6254;
+      --stamp: #9d1c14;
+      --sent: #1c6b45;
+      --lane: #f7f1e4;
+      --rule: #2a241c;
+      --wso2: #ff7300;
+      --mq: #ff6600;
+      --snow: #81b5a1;
+      --glow: rgba(157, 28, 20, 0.35);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      min-height: 100vh;
+      font-family: "Inconsolata", ui-monospace, monospace;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 88% 12%, rgba(157, 28, 20, 0.07), transparent 35%),
+        linear-gradient(180deg, rgba(27, 23, 18, 0.05) 1px, transparent 1px) 0 0 / 100% 32px,
+        var(--paper);
+    }
+    body.capture {
+      width: 1280px;
+      height: 720px;
+      overflow: hidden;
+    }
+    .wrap {
+      width: min(1240px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 24px 0 100px;
+    }
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: end;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+    .kicker {
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      font-size: 11px;
+      color: var(--stamp);
+    }
+    h1 {
+      font-family: Fraunces, Georgia, serif;
+      font-size: clamp(32px, 5vw, 42px);
+      font-weight: 560;
+      letter-spacing: -0.03em;
+      line-height: 1;
+      margin-top: 6px;
+    }
+    .nav-top a {
+      color: var(--stamp);
+      text-decoration: none;
+      font-size: 13px;
+    }
+    .nav-top a:hover { text-decoration: underline; }
+    .layout {
+      display: grid;
+      grid-template-columns: 1fr min(340px, 100%);
+      gap: 20px;
+      margin-top: 16px;
+      align-items: start;
+    }
+    @media (max-width: 960px) {
+      .layout { grid-template-columns: 1fr; }
+    }
+    .stage-panel {
+      padding: 18px 20px;
+      background: var(--lane);
+      border: 1px solid var(--rule);
+      border-left: 4px solid var(--stamp);
+    }
+    .stage-panel h2 {
+      font-family: Fraunces, Georgia, serif;
+      font-size: 24px;
+      font-weight: 680;
+      margin-bottom: 8px;
+    }
+    .stage-panel p {
+      color: var(--muted);
+      font-size: 15px;
+      line-height: 1.5;
+      margin-bottom: 12px;
+    }
+    .stage-panel ul {
+      margin: 0;
+      padding-left: 18px;
+      color: var(--ink);
+      font-size: 14px;
+      line-height: 1.55;
+    }
+    .stage-panel li { margin-bottom: 6px; }
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      margin-top: 14px;
+    }
+    button, .pill {
+      font-family: inherit;
+      font-size: 13px;
+      cursor: pointer;
+      border: 1px solid var(--rule);
+      background: #fff;
+      color: var(--ink);
+      padding: 8px 14px;
+    }
+    button:hover { background: var(--lane); }
+    button:disabled { opacity: 0.45; cursor: default; }
+    button.primary {
+      background: var(--stamp);
+      color: #fff;
+      border-color: var(--stamp);
+    }
+    .steps {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 12px;
+    }
+    .pill {
+      padding: 6px 10px;
+      border-radius: 999px;
+    }
+    .pill.active {
+      background: var(--stamp);
+      color: #fff;
+      border-color: var(--stamp);
+    }
+    .pill.done {
+      border-color: var(--sent);
+      color: var(--sent);
+    }
+    svg.pipeline {
+      display: block;
+      width: 100%;
+      height: auto;
+      max-height: 420px;
+    }
+    .track {
+      fill: none;
+      stroke: var(--rule);
+      stroke-width: 2.5;
+      stroke-dasharray: 8 10;
+      opacity: 0.45;
+    }
+    .track-glow {
+      fill: none;
+      stroke: var(--stamp);
+      stroke-width: 5;
+      stroke-linecap: round;
+      filter: blur(2px);
+    }
+    .node { cursor: pointer; }
+    .node circle.bg {
+      fill: var(--lane);
+      stroke: var(--rule);
+      stroke-width: 2;
+      transition: fill 0.2s, stroke 0.2s;
+    }
+    .node:hover circle.bg { fill: #fff; }
+    .node.active circle.bg {
+      fill: #fff;
+      stroke: var(--stamp);
+      stroke-width: 3;
+    }
+    .node.active circle.ring {
+      fill: none;
+      stroke: var(--stamp);
+      stroke-width: 1.5;
+      opacity: 0.55;
+    }
+    .node[data-index="1"].active circle.bg { stroke: var(--wso2); }
+    .node[data-index="4"].active circle.bg { stroke: var(--mq); }
+    .node[data-index="6"].active circle.bg { stroke: var(--sent); }
+    .node.done circle.bg {
+      fill: #e8f3ec;
+      stroke: var(--sent);
+    }
+    .node text.label {
+      font-family: Fraunces, Georgia, serif;
+      font-size: 15px;
+      font-weight: 680;
+      text-anchor: middle;
+      fill: var(--ink);
+      pointer-events: none;
+    }
+    .node text.sub {
+      font-size: 10px;
+      text-anchor: middle;
+      fill: var(--muted);
+      pointer-events: none;
+      letter-spacing: 0.06em;
+    }
+    .packet { filter: drop-shadow(0 4px 12px var(--glow)); pointer-events: none; }
+    .packet rect {
+      fill: #fff;
+      stroke: var(--stamp);
+      stroke-width: 2;
+    }
+    .packet text { font-size: 11px; fill: var(--ink); }
+    .badge { font-size: 9px; fill: var(--stamp); }
+    .fork {
+      fill: none;
+      stroke: var(--stamp);
+      stroke-width: 1.5;
+      stroke-dasharray: 4 6;
+      opacity: 0.35;
+    }
+    .hint {
+      margin-top: 10px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .footer {
+      margin-top: 16px;
+      font-size: 12px;
+      color: var(--muted);
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 24px;
+      justify-content: space-between;
+    }
+    .footer strong { color: var(--ink); }
+    body.capture .controls,
+    body.capture .nav-top,
+    body.capture .hint,
+    body.capture .layout aside { display: none; }
+    body.capture .layout { grid-template-columns: 1fr; }
+    body.capture .wrap { padding-bottom: 0; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div>
+        <div class="kicker">Demo_project · ITIL event management</div>
+        <h1>One event travels the stack</h1>
+      </div>
+      <div class="nav-top">
+        <span class="step-badge" id="stepBadge">Step 1 / 7</span>
+        · <a href="/" id="boardLink">Event board</a>
+      </div>
+    </header>
+
+    <div class="layout">
+      <div>
+        <svg class="pipeline" viewBox="0 0 1184 380" id="svg" role="img" aria-label="Event pipeline diagram">
+          <path id="pathMain" class="track" />
+          <path id="pathGlow" class="track-glow" />
+          <path id="pathFork" class="fork" />
+          <g id="nodes"></g>
+          <g id="packet" class="packet"></g>
+        </svg>
+        <div class="controls" id="controls">
+          <button type="button" id="btnPrev" aria-label="Previous step">← Previous</button>
+          <button type="button" class="primary" id="btnNext" aria-label="Next step">Next →</button>
+          <button type="button" id="btnPlay" aria-label="Play automatic tour">▶ Play tour</button>
+          <span class="hint">Click a node · arrow keys · or use the step chips below</span>
+        </div>
+        <div class="steps" id="stepPills"></div>
+        <div class="footer">
+          <span><strong>Events ≠ incidents</strong> · queue-backed delivery · failures stay visible</span>
+          <span>OAuth at WSO2 · async Quart · RabbitMQ · ServiceNow event</span>
+        </div>
+      </div>
+
+      <aside>
+        <div class="stage-panel" id="stagePanel">
+          <h2 id="stageTitle">—</h2>
+          <p id="stageDetail">—</p>
+          <ul id="stageBullets"></ul>
+        </div>
+      </aside>
+    </div>
+  </div>
+
+  <script>
+    const CAPTURE = new URLSearchParams(location.search).has("capture");
+    if (CAPTURE) document.body.classList.add("capture");
+    if (location.protocol === "file:") {
+      document.getElementById("boardLink").href = "../templates/desk.html";
+    }
+
+    const STAGES = [
+      {
+        id: "client",
+        x: 72, y: 200,
+        label: "Caller",
+        sub: "monitoring / app",
+        title: "1. API call leaves the client",
+        detail: "An integrator or monitoring tool sends an event without touching ServiceNow directly.",
+        bullets: [
+          "POST /desk/v1/events through WSO2 (not the Table API).",
+          "Authorization: Bearer … (OAuth from WSO2).",
+          "Body: JSON event payload, e.g. {\"description\":\"checkout-api is down\"}.",
+          "Optional header: X-Correlation-Id for tracing.",
+        ],
+      },
+      {
+        id: "wso2",
+        x: 240, y: 200,
+        label: "WSO2",
+        sub: "API Manager",
+        title: "2. Gateway authenticates and enriches",
+        detail: "WSO2 is the front door: subscription, throttling, and mediation policy.",
+        bullets: [
+          "Validates the access token and API subscription.",
+          "Mediation adds X-User-Name and X-User-Uuid (UUID v5 from username).",
+          "The client cannot spoof identity in the JSON body.",
+          "Forwards the call to the ingest service.",
+        ],
+      },
+      {
+        id: "ingest",
+        x: 420, y: 200,
+        label: "Ingest",
+        sub: "Quart · api.py",
+        title: "3. Ingest accepts fast (202)",
+        detail: "The async ingest service validates, persists, and decides the path.",
+        bullets: [
+          "401 if X-User-Uuid is missing; 400 if event text is empty.",
+          "Stores the message in MySQL with correlation id.",
+          "If UUID is blocked → queue events.spam (agent does not run).",
+          "Otherwise → ReAct triage, then publish to RabbitMQ.",
+          "Returns 202 with id, queue, trace envelope.",
+        ],
+      },
+      {
+        id: "agent",
+        x: 600, y: 200,
+        label: "ReAct agent",
+        sub: "AI + fallback",
+        title: "4. ReAct loop classifies severity",
+        detail: "Thought → Action → Observation; priority is derived, not sent by the client.",
+        bullets: [
+          "Tool lookup_service(description) — names the affected service.",
+          "Tool classify_priority(description) — suggests priority 1–5.",
+          "OpenRouter model when configured; ScriptedBrain fallback on failure.",
+          "Trace stored on the message for the event board.",
+        ],
+      },
+      {
+        id: "rabbit",
+        x: 780, y: 200,
+        label: "RabbitMQ",
+        sub: "exchange events",
+        title: "5. Durable queue handoff",
+        detail: "Ingest publishes; delivery consumes — spike buffer between accept and ServiceNow.",
+        bullets: [
+          "Direct exchange events, routing key = queue name.",
+          "priority1_queue … priority5_queue from classification.",
+          "events.spam for blocked senders; failed_snow_delivery after SN retries.",
+          "Message stays durable until acknowledged or moved to a failure queue.",
+        ],
+      },
+      {
+        id: "delivery",
+        x: 960, y: 200,
+        label: "Delivery",
+        sub: "Quart · worker",
+        title: "6. Delivery worker sends the event",
+        detail: "Maps the queued message to ServiceNow event fields and handles retries.",
+        bullets: [
+          "Consumes from priority queues (prefetch limited).",
+          "Builds source, node, severity, description, message_key, additional_info.",
+          "Tries EM APIs, then scripted POST /api/now/desk_events/event.",
+          "After 3 failures → failed_snow_delivery (still an event, not an incident).",
+        ],
+      },
+      {
+        id: "snow",
+        x: 1112, y: 200,
+        label: "ServiceNow",
+        sub: "u_itil_event",
+        title: "7. Event record in ServiceNow",
+        detail: "ITIL Event Management lane — not automatic incident creation.",
+        bullets: [
+          "Row in u_itil_event (or em_event on full EM instances).",
+          "Status sent and event number on the message.",
+          "Same payload posted twice → two events (message_key = message id).",
+          "Structured logs in Grafana/Loki by correlation id and user UUID.",
+        ],
+      },
+    ];
+
+    const pathD = (() => {
+      const pts = STAGES.map(s => [s.x, s.y]);
+      let d = `M ${pts[0][0]} ${pts[0][1]}`;
+      for (let i = 1; i < pts.length; i++) {
+        const prev = pts[i - 1];
+        const cur = pts[i];
+        const mx = (prev[0] + cur[0]) / 2;
+        d += ` C ${mx} ${prev[1]}, ${mx} ${cur[1]}, ${cur[0]} ${cur[1]}`;
+      }
+      return d;
+    })();
+
+    const pathEl = document.getElementById("pathMain");
+    const pathGlow = document.getElementById("pathGlow");
+    pathEl.setAttribute("d", pathD);
+    pathGlow.setAttribute("d", pathD);
+    document.getElementById("pathFork").setAttribute("d", "M 420 200 C 420 280, 520 300, 600 320");
+
+    const nodesG = document.getElementById("nodes");
+    const pillsG = document.getElementById("stepPills");
+    STAGES.forEach((s, i) => {
+      const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
+      g.classList.add("node");
+      g.dataset.index = i;
+      g.setAttribute("role", "button");
+      g.setAttribute("tabindex", "0");
+      g.setAttribute("aria-label", `Step ${i + 1}: ${s.label}`);
+      g.innerHTML = `
+        <circle class="ring" cx="${s.x}" cy="${s.y}" r="44"/>
+        <circle class="bg" cx="${s.x}" cy="${s.y}" r="36"/>
+        <text class="label" x="${s.x}" y="${s.y - 2}">${s.label}</text>
+        <text class="sub" x="${s.x}" y="${s.y + 14}">${s.sub}</text>
+      `;
+      g.addEventListener("click", () => setStep(i));
+      g.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setStep(i); }
+      });
+      nodesG.appendChild(g);
+
+      const pill = document.createElement("button");
+      pill.type = "button";
+      pill.className = "pill";
+      pill.textContent = `${i + 1}. ${s.label}`;
+      pill.addEventListener("click", () => setStep(i));
+      pillsG.appendChild(pill);
+    });
+
+    const packetG = document.getElementById("packet");
+    const path = pathEl;
+    const totalLength = path.getTotalLength();
+
+    let stepIndex = 0;
+    let animProgress = 0;
+    let animTarget = 0;
+    let animating = false;
+    let playTimer = null;
+
+    function progressForStep(i) {
+      return i / (STAGES.length - 1);
+    }
+
+    function packetLines(stageId) {
+      const base = ['{ "description": "checkout-api is down" }'];
+      const extra = {
+        client: [],
+        wso2: ["— gateway adds —", "X-User-Name: alice", "X-User-Uuid: ••••"],
+        ingest: ["202 · saved · MySQL", "correlation_id assigned"],
+        agent: ["ReAct: lookup_service →", "classify_priority → P1"],
+        rabbit: ["→ priority1_queue", "exchange: events"],
+        delivery: ["→ ServiceNow event API", "severity · message_key"],
+        snow: ["status: sent", "event EM001…"],
+      };
+      return base.concat(extra[stageId] || []);
+    }
+
+    function renderPacketAtProgress(progress) {
+      const idx = Math.round(progress * (STAGES.length - 1));
+      const stage = STAGES[idx];
+      const point = path.getPointAtLength(progress * totalLength);
+      const lines = packetLines(stage.id);
+      const w = 196;
+      const h = 28 + lines.length * 15;
+      const px = point.x - w / 2;
+      const py = point.y - h - 32;
+      let inner = "";
+      for (let t = 0; t < 3; t++) {
+        const trail = path.getPointAtLength(Math.max(0, progress * totalLength - t * 28));
+        inner += `<circle cx="${trail.x}" cy="${trail.y}" r="${7 - t * 2}" fill="#9d1c14" opacity="${0.12 - t * 0.03}"/>`;
+      }
+      inner += `<rect x="${px}" y="${py}" width="${w}" height="${h}" rx="8"/>`;
+      lines.forEach((line, i) => {
+        inner += `<text class="${i ? "badge" : ""}" x="${px + 10}" y="${py + 20 + i * 15}">${line}</text>`;
+      });
+      packetG.innerHTML = inner;
+      return idx;
+    }
+
+    function updateCopy(idx) {
+      const stage = STAGES[idx];
+      document.getElementById("stepBadge").textContent = `Step ${idx + 1} / ${STAGES.length}`;
+      document.getElementById("stageTitle").textContent = stage.title;
+      document.getElementById("stageDetail").textContent = stage.detail;
+      const ul = document.getElementById("stageBullets");
+      ul.innerHTML = stage.bullets.map(b => `<li>${b}</li>`).join("");
+
+      document.querySelectorAll(".node").forEach((n, i) => {
+        n.classList.remove("active", "done");
+        if (i < idx) n.classList.add("done");
+        if (i === idx) n.classList.add("active");
+      });
+      pillsG.querySelectorAll(".pill").forEach((p, i) => {
+        p.classList.remove("active", "done");
+        if (i < idx) p.classList.add("done");
+        if (i === idx) p.classList.add("active");
+      });
+
+      document.getElementById("btnPrev").disabled = idx === 0;
+      document.getElementById("btnNext").disabled = idx === STAGES.length - 1;
+      document.getElementById("pathFork").style.opacity = idx === 2 ? "0.75" : "0.2";
+    }
+
+    function paint(progress) {
+      animProgress = progress;
+      const idx = renderPacketAtProgress(progress);
+      pathGlow.style.opacity = String(0.15 + progress * 0.45);
+      pathGlow.style.strokeDasharray = `${totalLength * progress} ${totalLength}`;
+      if (idx !== stepIndex) stepIndex = idx;
+      updateCopy(idx);
+    }
+
+    function setStep(idx, animate = true) {
+      stopPlay();
+      idx = Math.max(0, Math.min(STAGES.length - 1, idx));
+      stepIndex = idx;
+      animTarget = progressForStep(idx);
+      if (!animate) {
+        paint(animTarget);
+        return;
+      }
+      animating = true;
+      const start = animProgress;
+      const startTime = performance.now();
+      const duration = 450;
+      function tick(now) {
+        const t = Math.min(1, (now - startTime) / duration);
+        const eased = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+        paint(start + (animTarget - start) * eased);
+        if (t < 1) requestAnimationFrame(tick);
+        else animating = false;
+      }
+      requestAnimationFrame(tick);
+    }
+
+    function stopPlay() {
+      if (playTimer) {
+        clearInterval(playTimer);
+        playTimer = null;
+      }
+      document.getElementById("btnPlay").textContent = "▶ Play tour";
+    }
+
+    function startPlay() {
+      if (playTimer) {
+        stopPlay();
+        return;
+      }
+      document.getElementById("btnPlay").textContent = "⏸ Pause";
+      if (stepIndex >= STAGES.length - 1) setStep(0, false);
+      playTimer = setInterval(() => {
+        if (animating) return;
+        if (stepIndex >= STAGES.length - 1) {
+          stopPlay();
+          return;
+        }
+        setStep(stepIndex + 1);
+      }, 2800);
+    }
+
+    document.getElementById("btnPrev").addEventListener("click", () => setStep(stepIndex - 1));
+    document.getElementById("btnNext").addEventListener("click", () => setStep(stepIndex + 1));
+    document.getElementById("btnPlay").addEventListener("click", startPlay);
+
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "ArrowLeft") setStep(stepIndex - 1);
+      if (e.key === "ArrowRight") setStep(stepIndex + 1);
+      if (e.key === "Home") setStep(0);
+      if (e.key === "End") setStep(STAGES.length - 1);
+    });
+
+    /* GIF capture mode (scripts/render_flow_gif.py) */
+    const travelFrames = 12;
+    const holdFrames = 11;
+    const segmentFrames = travelFrames + holdFrames;
+    window.totalFlowFrames = (STAGES.length - 1) * segmentFrames + holdFrames;
+
+    function frameToProgress(frame) {
+      const totalFrames = window.totalFlowFrames;
+      if (frame >= totalFrames - 1) return 1;
+      const seg = Math.floor(frame / segmentFrames);
+      const local = frame % segmentFrames;
+      const segStart = seg / (STAGES.length - 1);
+      const segEnd = (seg + 1) / (STAGES.length - 1);
+      if (local < travelFrames) {
+        const t = local / travelFrames;
+        const eased = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+        return segStart + (segEnd - segStart) * eased;
+      }
+      return segEnd;
+    }
+
+    window.renderFlowFrame = function(frame) {
+      const progress = frameToProgress(frame);
+      const idx = Math.round(progress * (STAGES.length - 1));
+      stepIndex = idx;
+      paint(progress);
+    };
+
+    if (CAPTURE) {
+      window.renderFlowFrame(0);
+    } else {
+      setStep(0, false);
+    }
+  </script>
+</body>
+</html>

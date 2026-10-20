@@ -1,6 +1,8 @@
 # How the application behaves
 
-![Animated flow: API gateway through queues to delivery](docs/images/flow.gif)
+**Interactive tour:** [docs/flow.html](docs/flow.html) (or http://localhost:8080/flow when ingest is up) — click through each step with bullet captions.
+
+![Animated preview](docs/images/flow.gif)
 
 ## Technologies
 

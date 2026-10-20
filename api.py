@@ -2,7 +2,9 @@ import os
 import uuid
 from datetime import datetime, timezone
 
-from quart import Quart, abort, jsonify, render_template, request
+from pathlib import Path
+
+from quart import Quart, abort, jsonify, render_template, request, send_from_directory
 
 from agents import make_brain, run_react
 from decorators import correlation_id, require_api_key
@@ -44,6 +46,11 @@ def create_app(store=None, broker=None, brain_factory=None):
     @app.get("/")
     async def desk():
         return await render_template("desk.html")
+
+    @app.get("/flow")
+    async def flow():
+        docs = Path(__file__).resolve().parent / "docs"
+        return await send_from_directory(docs, "flow.html")
 
     @app.get("/favicon.ico")
     async def favicon():

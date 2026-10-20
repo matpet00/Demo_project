@@ -4,9 +4,17 @@
 
 ## Overview
 
-![Animated flow: one event packet travels Caller → WSO2 → Ingest → ReAct → RabbitMQ → Delivery → ServiceNow](docs/images/flow.gif)
+**Interactive flow tour** — click each step with bullet captions (nodes, ← →, or **Play tour**):
 
-*~10 s walkthrough (regenerate: `python3 scripts/render_flow_gif.py`). UI montage: [overview.gif](docs/images/overview.gif).*
+| How to open | URL |
+| --- | --- |
+| Stack running | **http://localhost:8080/flow** |
+| Local clone | open [`docs/flow.html`](docs/flow.html) in a browser (File → Open) |
+| GitHub browse | clone the repo; the file view on GitHub is not interactive |
+
+![Animated preview](docs/images/flow.gif)
+
+*GIF preview (~10 s). Regenerate: `python3 scripts/render_flow_gif.py`. UI montage: [overview.gif](docs/images/overview.gif).*
 
 If you hire integrators who only know “POST to ServiceNow and parse the response,” you get fragile scripts. This repo shows the other pattern: **ITIL Event Management** with a real gateway, async workers, and queues — so spikes, retries, and bad senders do not become ticket chaos or lost messages.
 
@@ -128,6 +136,7 @@ python build.py
 | UI | URL |
 | --- | --- |
 | Event board | http://localhost:8080 |
+| **Interactive flow** | http://localhost:8080/flow |
 | Mailpit | http://localhost:8025 |
 | Grafana | http://localhost:3000 |
 | RabbitMQ management | http://localhost:15672 (`events` / `events`) |
@@ -172,6 +181,6 @@ make test
 | `rabbitmq.py` | Topology and I/O |
 | `servicenow.py` | Event push (live + mock) |
 | `logging_setup.py` | Structured JSON to stdout |
-| `scripts/flow_animation.html` + `render_flow_gif.py` | Source and capture for `docs/images/flow.gif` |
+| `docs/flow.html` + `render_flow_gif.py` | Interactive tour and GIF capture source |
 
 ![Grafana](docs/images/grafana.png)

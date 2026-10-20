@@ -105,3 +105,12 @@ async def test_desk_renders_mediation_uuids(app):
     text = await response.get_data(as_text=True)
     assert response.status_code == 200
     assert "Desk" in text
+
+
+async def test_flow_tour_is_served(app):
+    async with app.test_client() as client:
+        response = await client.get("/flow")
+    text = await response.get_data(as_text=True)
+    assert response.status_code == 200
+    assert "Interactive" in text or "One event travels" in text
+    assert "WSO2" in text
