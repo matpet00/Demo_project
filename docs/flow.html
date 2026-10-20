@@ -601,7 +601,7 @@
 
     /* GIF capture mode (scripts/render_flow_gif.py) — slower holds for readable text */
     const travelFrames = CAPTURE ? 18 : 12;
-    const holdFrames = CAPTURE ? 38 : 11;
+    const holdFrames = CAPTURE ? 48 : 11;
     const segmentFrames = travelFrames + holdFrames;
     window.totalFlowFrames = (STAGES.length - 1) * segmentFrames + holdFrames;
 

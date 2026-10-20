@@ -4,24 +4,17 @@
 
 ## Overview
 
-[![Click through the stack — WSO2, ReAct agent, RabbitMQ, ServiceNow](docs/images/flow-poster.png)](https://matpet00.github.io/Demo_project/flow.html)
+![Event flow — Caller → WSO2 → Ingest → ReAct agent → RabbitMQ → Delivery → ServiceNow](docs/images/flow.gif)
 
-**[▶ Open interactive flow tour](https://matpet00.github.io/Demo_project/flow.html)** — click each step (nodes or ← →), read the captions, press **Play tour**. Same app when the stack runs: http://localhost:8080/flow
+**[▶ Interactive flow tour](https://matpet00.github.io/Demo_project/flow.html)** — click any step, use ← →, or **Play tour**; each stage has a plain-language caption (gateway, ReAct loop, queues, ServiceNow event).
 
-<details>
-<summary>Short animated preview (GIF)</summary>
-
-![Animated preview](docs/images/flow.gif)
-
-</details>
-
-UI montage: [overview.gif](docs/images/overview.gif) · Regenerate assets: `python3 scripts/render_flow_gif.py`
+Screenshots montage: [overview.gif](docs/images/overview.gif)
 
 If you hire integrators who only know “POST to ServiceNow and parse the response,” you get fragile scripts. This repo shows the other pattern: **ITIL Event Management** with a real gateway, async workers, and queues — so spikes, retries, and bad senders do not become ticket chaos or lost messages.
 
 Callers authenticate at **WSO2 API Manager** and post a **JSON event payload** (`description` or `short_description`, plus optional `X-Correlation-Id`). The gateway adds identity headers; ingest validates the body, classifies severity, routes by priority, and delivers a full **event record** to ServiceNow (not an incident). Failures stay visible: dedicated queues, structured logs in Grafana, setup separated from runtime code.
 
-**Quick review without Docker:** `python -m pip install -e ".[test]" && make test` (21 pytest cases, in-memory broker and store).
+**Quick review without Docker:** `python -m pip install -e ".[test]" && make test` (22 pytest cases, in-memory broker and store).
 
 Full behaviour, payloads, and diagrams → **[FLOW.md](FLOW.md)**.
 
@@ -137,7 +130,6 @@ python build.py
 | UI | URL |
 | --- | --- |
 | Event board | http://localhost:8080 |
-| **Interactive flow** | http://localhost:8080/flow |
 | Mailpit | http://localhost:8025 |
 | Grafana | http://localhost:3000 |
 | RabbitMQ management | http://localhost:15672 (`events` / `events`) |
@@ -173,7 +165,7 @@ python -m pip install -e ".[test]"
 make test
 ```
 
-21 pytest cases; in-memory store and broker — no WSO2, MySQL, or Grafana required.
+22 pytest cases; in-memory store and broker — no WSO2, MySQL, or Grafana required.
 
 | File | Responsibility |
 | --- | --- |

@@ -14,7 +14,7 @@ HTML = ROOT / "docs" / "flow.html"
 OUT = ROOT / "docs" / "images" / "flow.gif"
 POSTER = ROOT / "docs" / "images" / "flow-poster.png"
 
-FRAME_MS = 95
+FRAME_MS = 110
 
 
 async def capture() -> tuple[list[Image.Image], list[int], Image.Image]:
