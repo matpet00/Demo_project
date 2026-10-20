@@ -16,8 +16,10 @@ Both HTTP services are Quart, so the request and the broker share one asyncio lo
 
 ```bash
 cp .env.example .env
-docker compose up --build
+python build.py
 ```
+
+`build.py` runs the unit tests, builds every image, starts Compose, checks the three priorities and the spammer mail, then waits until WSO2 has published the API.
 
 Then open:
 
