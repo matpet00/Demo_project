@@ -2,7 +2,7 @@
 
 If you hire integrators who only know “POST to ServiceNow and parse the response,” you get fragile scripts. This repo shows the other pattern: **ITIL Event Management** with a real gateway, async workers, and queues — so spikes, retries, and bad senders do not become ticket chaos or lost messages.
 
-Callers authenticate at **WSO2 API Manager** and send a plain description. The platform classifies severity, routes by priority, and delivers an **event** to ServiceNow (not an incident). Failures stay visible: dedicated queues, structured logs in Grafana, setup separated from runtime code.
+Callers authenticate at **WSO2 API Manager** and post a **JSON event payload** (`description` or `short_description`, plus optional `X-Correlation-Id`). The gateway adds identity headers; ingest validates the body, classifies severity, routes by priority, and delivers a full **event record** to ServiceNow (not an incident). Failures stay visible: dedicated queues, structured logs in Grafana, setup separated from runtime code.
 
 Full behaviour, payloads, and diagrams → **[FLOW.md](FLOW.md)**.
 
@@ -12,9 +12,19 @@ Full behaviour, payloads, and diagrams → **[FLOW.md](FLOW.md)**.
 
 Monitoring feeds and integrations produce **events** — early signals. ITIL treats Event Management as the stage that filters, correlates, and prioritizes those signals *before* opening incidents or changes. That is what this code models.
 
-1. **Gateway** — OAuth, API product, throttling. Mediation sets `X-User-Name` and `X-User-Uuid` (UUID v5 from the username). The client cannot spoof identity.
-2. **Ingest (Quart, async)** — persist the request, check the block list, run a **ReAct agent** (OpenRouter with a **ScriptedBrain** fallback) to assign priority 1–5, publish to RabbitMQ, return 202 quickly.
-3. **Delivery (Quart, async)** — consume from priority queues, create the event in ServiceNow, or send mail when the sender is blocked. Retry ServiceNow; after three failures, park the message on `failed_snow_delivery` — still an event, not silently morphed into something else.
+**Inbound event payload** (through the gateway, e.g. `POST /desk/v1/events`):
+
+```json
+{
+  "description": "checkout-api outage, payments are down"
+}
+```
+
+`short_description` is accepted when `description` is omitted. Priority is **not** in the body — the ingest service derives it. WSO2 mediation supplies `X-User-Name` and `X-User-Uuid` (UUID v5 from the username); the client cannot spoof them.
+
+1. **Gateway** — OAuth, API product, throttling. Mediation attaches caller identity to every event call.
+2. **Ingest (Quart, async)** — validate the JSON payload, persist the message, check the block list, run a **ReAct agent** (OpenRouter with a **ScriptedBrain** fallback) on the event text to assign priority 1–5, publish the enriched message to RabbitMQ, return **202** with the stored event envelope (id, queue, correlation id, trace).
+3. **Delivery (Quart, async)** — consume from priority queues, map the queued message to ServiceNow event fields (`source`, `node`, `severity`, `description`, `message_key`, `additional_info`, …), or send mail when the sender is blocked. Retry ServiceNow; after three failures, park the message on `failed_snow_delivery` — still an event, not silently morphed into something else.
 4. **Observability** — one JSON log line per step; Alloy → Loki → Grafana, filterable by user, correlation id, and queue.
 
 ```mermaid
@@ -60,7 +70,7 @@ WSO2 owns subscription and policy at the edge. RabbitMQ is the handoff between �
 | Suppression is explicit | Block list → `events.spam`, email, status `not_processed`. |
 | Failed handling stays in the event lane | `failed_snow_delivery` holds messages after retry exhaustion — for operators, not auto-incident creation. |
 
-Same description sent ten times → ten events. That is intentional (typical monitoring semantics). Idempotency helpers exist in code but are **not** wired to ingestion, so the behaviour stays honest in tests and demos.
+The same event payload posted ten times → ten distinct events (`message_key` per message). That is intentional (typical monitoring semantics). Idempotency helpers exist in code but are **not** wired to ingestion, so the behaviour stays honest in tests and demos.
 
 ---
 
