@@ -2,17 +2,9 @@
 
 ## Overview
 
-Desk is a small event pipeline in front of ServiceNow. A caller signs in at WSO2 API Manager and posts a description. The gateway stamps their name and UUID. An AI agent reads that text and assigns a priority from 1 to 5. RabbitMQ carries the message, and a second service writes the event into ServiceNow. A blocked caller is stopped on the way and gets an email instead.
+Desk records IT events in ServiceNow. A user authenticates at WSO2 API Manager and sends a description. Mediation attaches that user's name and UUID. The intake service checks the UUID against the block list. For anyone else, an agent reads the description, assigns a priority from 1 to 5, and publishes the message to RabbitMQ. A second service consumes the queue and creates the event.
 
-It is built to show a complete path, including the parts that usually stay hidden. Identity is added at the gateway. The same description sent ten times is ten events. A ServiceNow failure is retried and then left on its own queue, where it can be inspected. Logs are JSON and can be filtered in Grafana by user, correlation id, and queue. Users, the API subscription, and the ServiceNow table are created once, before any traffic. Request and response examples are in [FLOW.md](FLOW.md).
-
-What it is meant to show:
-
-- an API gateway in front of application code, with the caller identity added in mediation
-- an AI agent that chooses a priority from free text, and a scripted fallback when the model is unavailable
-- async Python services with RabbitMQ between the decision and the delivery
-- a real write into ServiceNow, including a custom event table when Event Management is not installed
-- failure handling and logs that stay visible after the call returns
+Each accepted call is stored and delivered on its own. A blocked user receives an email and is not written to ServiceNow. A failed ServiceNow call is retried three times and then kept on `failed_snow_delivery`. Gateway users, the API subscription, and the ServiceNow table are created by `preparation.py` before the services start. Request and response examples are in [FLOW.md](FLOW.md).
 
 ## Technologies
 
