@@ -4,9 +4,9 @@
 
 ## Overview
 
-![Animated flow: WSO2 gateway → ingest → ReAct agent → RabbitMQ → ServiceNow / failure paths](docs/images/flow.gif)
+![Animated flow: one event packet travels Caller → WSO2 → Ingest → ReAct → RabbitMQ → Delivery → ServiceNow](docs/images/flow.gif)
 
-*Step-by-step architecture (9 frames). UI screenshots: [overview.gif](docs/images/overview.gif).*
+*~10 s walkthrough (regenerate: `python3 scripts/render_flow_gif.py`). UI montage: [overview.gif](docs/images/overview.gif).*
 
 If you hire integrators who only know “POST to ServiceNow and parse the response,” you get fragile scripts. This repo shows the other pattern: **ITIL Event Management** with a real gateway, async workers, and queues — so spikes, retries, and bad senders do not become ticket chaos or lost messages.
 
@@ -172,6 +172,6 @@ make test
 | `rabbitmq.py` | Topology and I/O |
 | `servicenow.py` | Event push (live + mock) |
 | `logging_setup.py` | Structured JSON to stdout |
-| `scripts/render_flow_gif.py` | Regenerate `docs/images/flow.gif` |
+| `scripts/flow_animation.html` + `render_flow_gif.py` | Source and capture for `docs/images/flow.gif` |
 
 ![Grafana](docs/images/grafana.png)

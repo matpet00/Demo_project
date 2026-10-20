@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,560;9..144,680&family=Inconsolata:wght@460;680&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --paper: #efe4cf;
+      --ink: #1b1712;
+      --muted: #6d6254;
+      --stamp: #9d1c14;
+      --sent: #1c6b45;
+      --lane: #f7f1e4;
+      --rule: #2a241c;
+      --wso2: #ff7300;
+      --mq: #ff6600;
+      --snow: #81b5a1;
+      --glow: rgba(157, 28, 20, 0.35);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      width: 1280px;
+      height: 720px;
+      overflow: hidden;
+      font-family: "Inconsolata", ui-monospace, monospace;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 88% 12%, rgba(157, 28, 20, 0.07), transparent 35%),
+        linear-gradient(180deg, rgba(27, 23, 18, 0.05) 1px, transparent 1px) 0 0 / 100% 32px,
+        var(--paper);
+    }
+    header {
+      padding: 28px 48px 8px;
+      display: flex;
+      justify-content: space-between;
+      align-items: end;
+    }
+    .kicker {
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      font-size: 11px;
+      color: var(--stamp);
+    }
+    h1 {
+      font-family: Fraunces, Georgia, serif;
+      font-size: 42px;
+      font-weight: 560;
+      letter-spacing: -0.03em;
+      line-height: 1;
+      margin-top: 6px;
+    }
+    .step-badge {
+      font-size: 13px;
+      color: var(--muted);
+      letter-spacing: 0.08em;
+    }
+    .stage-panel {
+      margin: 8px 48px 0;
+      min-height: 88px;
+      padding: 16px 20px;
+      background: var(--lane);
+      border: 1px solid var(--rule);
+      border-left: 4px solid var(--stamp);
+      transition: opacity 0.1s;
+    }
+    .stage-panel h2 {
+      font-family: Fraunces, Georgia, serif;
+      font-size: 26px;
+      font-weight: 680;
+      margin-bottom: 6px;
+    }
+    .stage-panel p {
+      color: var(--muted);
+      font-size: 15px;
+      max-width: 95ch;
+      line-height: 1.45;
+    }
+    svg.pipeline {
+      display: block;
+      margin: 12px auto 0;
+      width: 1184px;
+      height: 380px;
+    }
+    .track {
+      fill: none;
+      stroke: var(--rule);
+      stroke-width: 2.5;
+      stroke-dasharray: 8 10;
+      opacity: 0.45;
+    }
+    .track-glow {
+      fill: none;
+      stroke: var(--stamp);
+      stroke-width: 5;
+      stroke-linecap: round;
+      opacity: 0;
+      filter: blur(2px);
+    }
+    .node circle.bg {
+      fill: var(--lane);
+      stroke: var(--rule);
+      stroke-width: 2;
+      transition: fill 0.15s, stroke 0.15s;
+    }
+    .node.active circle.bg {
+      fill: #fff;
+      stroke: var(--stamp);
+      stroke-width: 3;
+    }
+    .node.active circle.ring {
+      fill: none;
+      stroke: var(--stamp);
+      stroke-width: 1.5;
+      opacity: 0.55;
+    }
+    .node[data-index="1"].active circle.bg { stroke: var(--wso2); }
+    .node[data-index="4"].active circle.bg { stroke: var(--mq); }
+    .node[data-index="6"].active circle.bg { stroke: var(--sent); }
+    .node.done circle.bg {
+      fill: #e8f3ec;
+      stroke: var(--sent);
+    }
+    .node text.label {
+      font-family: Fraunces, Georgia, serif;
+      font-size: 15px;
+      font-weight: 680;
+      text-anchor: middle;
+      fill: var(--ink);
+    }
+    .node text.sub {
+      font-size: 10px;
+      text-anchor: middle;
+      fill: var(--muted);
+      letter-spacing: 0.06em;
+    }
+    .packet {
+      filter: drop-shadow(0 4px 12px var(--glow));
+    }
+    .packet rect {
+      fill: #fff;
+      stroke: var(--stamp);
+      stroke-width: 2;
+      rx: 8;
+    }
+    .packet text {
+      font-size: 11px;
+      fill: var(--ink);
+    }
+    .badge {
+      font-size: 9px;
+      fill: var(--stamp);
+    }
+    .fork {
+      fill: none;
+      stroke: var(--stamp);
+      stroke-width: 1.5;
+      stroke-dasharray: 4 6;
+      opacity: 0.35;
+    }
+    .footer {
+      position: absolute;
+      bottom: 22px;
+      left: 48px;
+      right: 48px;
+      display: flex;
+      justify-content: space-between;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .footer strong { color: var(--ink); }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <div class="kicker">Demo_project · ITIL event management</div>
+      <h1>One event travels the stack</h1>
+    </div>
+    <div class="step-badge" id="stepBadge">—</div>
+  </header>
+  <div class="stage-panel" id="stagePanel">
+    <h2 id="stageTitle">—</h2>
+    <p id="stageDetail">—</p>
+  </div>
+  <svg class="pipeline" viewBox="0 0 1184 380" id="svg">
+    <path id="pathMain" class="track" />
+    <path id="pathGlow" class="track-glow" />
+    <path id="pathFork" class="fork" />
+    <g id="nodes"></g>
+    <g id="packet" class="packet"></g>
+  </svg>
+  <div class="footer">
+    <span><strong>Events ≠ incidents</strong> · queue-backed delivery · failures stay visible</span>
+    <span id="footerRight">OAuth at WSO2 · async Quart services · RabbitMQ · ServiceNow event</span>
+  </div>
+  <script>
+    const STAGES = [
+      {
+        id: "client",
+        x: 72, y: 200,
+        label: "Caller",
+        sub: "monitoring / app",
+        title: "API call leaves the client",
+        detail: "POST /desk/v1/events with OAuth Bearer token and JSON event payload — e.g. {\"description\":\"checkout-api is down\"}. No ServiceNow credentials on the wire.",
+        badges: [],
+      },
+      {
+        id: "wso2",
+        x: 240, y: 200,
+        label: "WSO2",
+        sub: "API Manager",
+        title: "Gateway authenticates and enriches",
+        detail: "Validates the token and subscription. Mediation injects identity the client cannot forge: X-User-Name and X-User-Uuid (v5 of username). Throttling and policy live here.",
+        badges: ["+ X-User-Name", "+ X-User-Uuid"],
+      },
+      {
+        id: "ingest",
+        x: 420, y: 200,
+        label: "Ingest",
+        sub: "Quart · api.py",
+        title: "Backend accepts fast (202)",
+        detail: "Checks UUID header and event text. Persists the message in MySQL with correlation id. Block-list check: if blocked → events.spam (agent skipped). Otherwise → triage.",
+        badges: ["202 Accepted"],
+      },
+      {
+        id: "agent",
+        x: 600, y: 200,
+        label: "ReAct agent",
+        sub: "AI + fallback",
+        title: "Thought → Action → Observation",
+        detail: "lookup_service(description), then classify_priority(description). Model via OpenRouter; ScriptedBrain if unavailable. Output: priority 1–5 and a trace on the message.",
+        badges: ["priority 1–5"],
+      },
+      {
+        id: "rabbit",
+        x: 780, y: 200,
+        label: "RabbitMQ",
+        sub: "exchange events",
+        title: "Durable queue handoff",
+        detail: "Message published to priority1_queue … priority5_queue (or events.spam). Ingest returns immediately; spike absorption and retries happen downstream.",
+        badges: ["priorityN_queue"],
+      },
+      {
+        id: "delivery",
+        x: 960, y: 200,
+        label: "Delivery",
+        sub: "Quart · worker",
+        title: "Consumer maps and sends",
+        detail: "Pulls from the queue, builds ServiceNow event fields (source, node, severity, message_key, additional_info). Retries on failure; after 3× → failed_snow_delivery.",
+        badges: ["event record"],
+      },
+      {
+        id: "snow",
+        x: 1112, y: 200,
+        label: "ServiceNow",
+        sub: "u_itil_event",
+        title: "Event created — not an incident",
+        detail: "Scripted REST / EM APIs. Status sent and event number stored. Same payload twice = two events (message_key). Logs in Grafana/Loki tie the journey to correlation id.",
+        badges: ["EM001…"],
+      },
+    ];
+
+    const pathD = (() => {
+      const pts = STAGES.map(s => [s.x, s.y]);
+      let d = `M ${pts[0][0]} ${pts[0][1]}`;
+      for (let i = 1; i < pts.length; i++) {
+        const prev = pts[i - 1];
+        const cur = pts[i];
+        const mx = (prev[0] + cur[0]) / 2;
+        d += ` C ${mx} ${prev[1]}, ${mx} ${cur[1]}, ${cur[0]} ${cur[1]}`;
+      }
+      return d;
+    })();
+
+    const pathEl = document.getElementById("pathMain");
+    const pathGlow = document.getElementById("pathGlow");
+    pathEl.setAttribute("d", pathD);
+    pathGlow.setAttribute("d", pathD);
+
+    const forkEl = document.getElementById("pathFork");
+    forkEl.setAttribute("d", "M 420 200 C 420 280, 520 300, 600 320");
+
+    const nodesG = document.getElementById("nodes");
+    STAGES.forEach((s, i) => {
+      const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
+      g.classList.add("node");
+      g.dataset.index = i;
+      g.innerHTML = `
+        <circle class="ring" cx="${s.x}" cy="${s.y}" r="44"/>
+        <circle class="bg" cx="${s.x}" cy="${s.y}" r="36"/>
+        <text class="label" x="${s.x}" y="${s.y - 2}">${s.label}</text>
+        <text class="sub" x="${s.x}" y="${s.y + 14}">${s.sub}</text>
+      `;
+      nodesG.appendChild(g);
+    });
+
+    const packetG = document.getElementById("packet");
+    const path = pathEl;
+    const totalLength = path.getTotalLength();
+
+    function lerp(a, b, t) { return a + (b - a) * t; }
+
+    function easeInOut(t) {
+      return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+    }
+
+    /** Timeline: for each segment, travelFrames + holdFrames */
+    const travelFrames = 12;
+    const holdFrames = 11;
+    const segmentFrames = travelFrames + holdFrames;
+    const totalFrames = (STAGES.length - 1) * segmentFrames + holdFrames;
+
+    window.totalFlowFrames = totalFrames;
+
+    function frameToProgress(frame) {
+      if (frame >= totalFrames - 1) return 1;
+      const seg = Math.floor(frame / segmentFrames);
+      const local = frame % segmentFrames;
+      const segStart = seg / (STAGES.length - 1);
+      const segEnd = (seg + 1) / (STAGES.length - 1);
+      if (local < travelFrames) {
+        const t = easeInOut(local / travelFrames);
+        return lerp(segStart, segEnd, t);
+      }
+      return segEnd;
+    }
+
+    function activeStageIndex(progress) {
+      const idx = Math.round(progress * (STAGES.length - 1));
+      return Math.min(STAGES.length - 1, Math.max(0, idx));
+    }
+
+    function packetLines(stageId) {
+      const base = [
+        '{ "description": "checkout-api is down" }',
+      ];
+      const extra = {
+        client: [],
+        wso2: ["— gateway adds —", "X-User-Name: alice", "X-User-Uuid: ••••"],
+        ingest: ["202 · saved · MySQL", "correlation_id assigned"],
+        agent: ["ReAct: lookup_service →", "classify_priority → P1"],
+        rabbit: ["→ priority1_queue", "exchange: events"],
+        delivery: ["→ ServiceNow event API", "severity · message_key"],
+        snow: ["status: sent", "event EM001…"],
+      };
+      return base.concat(extra[stageId] || []);
+    }
+
+    function renderPacket(x, y, stage, pulse, progress) {
+      const lines = packetLines(stage.id);
+      const w = 196;
+      const h = 28 + lines.length * 15;
+      const px = x - w / 2;
+      const py = y - h - 32 - pulse * 8;
+      let inner = "";
+      for (let t = 0; t < 3; t++) {
+        const trail = path.getPointAtLength(Math.max(0, progress * totalLength - t * 28));
+        inner += `<circle cx="${trail.x}" cy="${trail.y}" r="${7 - t * 2}" fill="var(--stamp)" opacity="${0.12 - t * 0.03}"/>`;
+      }
+      inner += `<rect x="${px}" y="${py}" width="${w}" height="${h}" />`;
+      lines.forEach((line, i) => {
+        const cls = i === 0 ? "" : ' class="badge"';
+        inner += `<text${cls} x="${px + 10}" y="${py + 20 + i * 15}">${line}</text>`;
+      });
+      packetG.innerHTML = inner;
+    }
+
+    window.renderFlowFrame = function(frame) {
+      const progress = frameToProgress(frame);
+      const point = path.getPointAtLength(progress * totalLength);
+      const idx = activeStageIndex(progress);
+      const stage = STAGES[idx];
+      const local = frame % segmentFrames;
+      const pulse = local < travelFrames ? 0.08 : 0;
+
+      document.getElementById("stepBadge").textContent = `Step ${idx + 1} / ${STAGES.length}`;
+      document.getElementById("stageTitle").textContent = stage.title;
+      document.getElementById("stageDetail").textContent = stage.detail;
+
+      document.querySelectorAll(".node").forEach((n, i) => {
+        n.classList.remove("active", "done");
+        if (i < idx) n.classList.add("done");
+        if (i === idx) n.classList.add("active");
+      });
+
+      pathGlow.style.opacity = String(0.15 + progress * 0.45);
+      pathGlow.style.strokeDasharray = `${totalLength * progress} ${totalLength}`;
+
+      renderPacket(point.x, point.y, stage, pulse, progress);
+
+      forkEl.style.opacity = idx === 2 ? "0.75" : "0.2";
+    };
+
+    window.renderFlowFrame(0);
+  </script>
+</body>
+</html>
