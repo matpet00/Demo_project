@@ -218,10 +218,28 @@
     .fork {
       fill: none;
       stroke: var(--stamp);
-      stroke-width: 1.5;
+      stroke-width: 2;
       stroke-dasharray: 4 6;
-      opacity: 0.35;
+      opacity: 0.55;
     }
+    .fork.inactive { opacity: 0.2; }
+    .path-toggle {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 14px;
+    }
+    .path-toggle button.active {
+      background: var(--stamp);
+      color: #fff;
+      border-color: var(--stamp);
+    }
+    .node.dim { opacity: 0.22; pointer-events: none; }
+    .node.spam-only { display: none; }
+    body.mode-spam .node.normal-only { display: none; }
+    body.mode-spam .node.spam-only { display: block; opacity: 1; pointer-events: auto; }
+    body.mode-normal .node.spam-only { display: none; }
+    body.capture .path-toggle { display: none; }
     .hint {
       margin-top: 10px;
       font-size: 12px;
@@ -263,6 +281,10 @@
 
     <div class="layout">
       <div>
+        <div class="path-toggle" id="pathToggle">
+          <button type="button" class="active" data-mode="normal">Standard event (alice)</button>
+          <button type="button" data-mode="spam">Blocked sender (bob → spam)</button>
+        </div>
         <svg class="pipeline" viewBox="0 0 1184 380" id="svg" role="img" aria-label="Event pipeline diagram">
           <path id="pathMain" class="track" />
           <path id="pathGlow" class="track-glow" />
@@ -304,110 +326,139 @@
       document.getElementById("boardLink").href = "https://github.com/matpet00/Demo_project";
     }
 
-    const STAGES = [
+    const STAGES_NORMAL = [
       {
-        id: "client",
-        x: 72, y: 200,
-        label: "Caller",
-        sub: "monitoring / app",
+        id: "client", x: 72, y: 200, label: "Caller", sub: "alice",
         title: "1. API call leaves the client",
-        detail: "An integrator or monitoring tool sends an event without touching ServiceNow directly.",
+        detail: "Standard path: a trusted sender posts an event through the gateway.",
         bullets: [
           "POST /desk/v1/events through WSO2 (not the Table API).",
           "Authorization: Bearer … (OAuth from WSO2).",
-          "Body: JSON event payload, e.g. {\"description\":\"checkout-api is down\"}.",
-          "Optional header: X-Correlation-Id for tracing.",
+          "JSON event payload, e.g. {\"description\":\"checkout-api is down\"}.",
+          "Optional header: X-Correlation-Id.",
         ],
       },
       {
-        id: "wso2",
-        x: 240, y: 200,
-        label: "WSO2",
-        sub: "API Manager",
+        id: "wso2", x: 240, y: 200, label: "WSO2", sub: "API Manager",
         title: "2. Gateway authenticates and enriches",
-        detail: "WSO2 is the front door: subscription, throttling, and mediation policy.",
+        detail: "WSO2 is the front door: subscription, throttling, mediation.",
         bullets: [
-          "Validates the access token and API subscription.",
-          "Mediation adds X-User-Name and X-User-Uuid (UUID v5 from username).",
-          "The client cannot spoof identity in the JSON body.",
-          "Forwards the call to the ingest service.",
+          "Validates token and subscription.",
+          "Adds X-User-Name and X-User-Uuid (v5) — not from the JSON body.",
+          "Forwards to ingest.",
         ],
       },
       {
-        id: "ingest",
-        x: 420, y: 200,
-        label: "Ingest",
-        sub: "Quart · api.py",
-        title: "3. Ingest accepts fast (202)",
-        detail: "The async ingest service validates, persists, and decides the path.",
+        id: "ingest", x: 420, y: 200, label: "Ingest", sub: "Quart · api.py",
+        title: "3. Ingest — UUID not blocked",
+        detail: "Message saved; ReAct triage runs because alice is not on the block list.",
         bullets: [
-          "401 if X-User-Uuid is missing; 400 if event text is empty.",
-          "Stores the message in MySQL with correlation id.",
-          "If UUID is blocked → queue events.spam (agent does not run).",
-          "Otherwise → ReAct triage, then publish to RabbitMQ.",
-          "Returns 202 with id, queue, trace envelope.",
+          "202 Accepted · row in MySQL · correlation id.",
+          "Block list miss → agent runs.",
+          "Fork: blocked UUID would skip the agent (see spam branch).",
         ],
       },
       {
-        id: "agent",
-        x: 600, y: 200,
-        label: "ReAct agent",
-        sub: "AI + fallback",
+        id: "agent", x: 600, y: 200, label: "ReAct agent", sub: "AI + fallback",
         title: "4. ReAct loop classifies severity",
-        detail: "Thought → Action → Observation; priority is derived, not sent by the client.",
+        detail: "Thought → Action → Observation; priority 1–5 is derived here.",
         bullets: [
-          "Tool lookup_service(description) — names the affected service.",
-          "Tool classify_priority(description) — suggests priority 1–5.",
-          "OpenRouter model when configured; ScriptedBrain fallback on failure.",
-          "Trace stored on the message for the event board.",
+          "lookup_service(description), then classify_priority(description).",
+          "OpenRouter or ScriptedBrain fallback.",
+          "Trace stored on the message.",
         ],
       },
       {
-        id: "rabbit",
-        x: 780, y: 200,
-        label: "RabbitMQ",
-        sub: "exchange events",
+        id: "rabbit", x: 780, y: 200, label: "RabbitMQ", sub: "priority queue",
         title: "5. Durable queue handoff",
-        detail: "Ingest publishes; delivery consumes — spike buffer between accept and ServiceNow.",
+        detail: "Published to priority1_queue … priority5_queue.",
         bullets: [
-          "Direct exchange events, routing key = queue name.",
-          "priority1_queue … priority5_queue from classification.",
-          "events.spam for blocked senders; failed_snow_delivery after SN retries.",
-          "Message stays durable until acknowledged or moved to a failure queue.",
+          "Exchange events (direct), durable message.",
+          "Decouples accept from ServiceNow delivery.",
         ],
       },
       {
-        id: "delivery",
-        x: 960, y: 200,
-        label: "Delivery",
-        sub: "Quart · worker",
-        title: "6. Delivery worker sends the event",
-        detail: "Maps the queued message to ServiceNow event fields and handles retries.",
+        id: "delivery", x: 960, y: 200, label: "Delivery", sub: "Quart · worker",
+        title: "6. Delivery → ServiceNow event",
+        detail: "Consumer maps fields and creates an event record.",
         bullets: [
-          "Consumes from priority queues (prefetch limited).",
-          "Builds source, node, severity, description, message_key, additional_info.",
-          "Tries EM APIs, then scripted POST /api/now/desk_events/event.",
-          "After 3 failures → failed_snow_delivery (still an event, not an incident).",
+          "source, node, severity, message_key, additional_info.",
+          "Retries; failed_snow_delivery after 3 failures.",
         ],
       },
       {
-        id: "snow",
-        x: 1112, y: 200,
-        label: "ServiceNow",
-        sub: "u_itil_event",
-        title: "7. Event record in ServiceNow",
-        detail: "ITIL Event Management lane — not automatic incident creation.",
+        id: "snow", x: 1112, y: 200, label: "ServiceNow", sub: "u_itil_event",
+        title: "7. Event created — not an incident",
+        detail: "ITIL Event Management lane completes.",
         bullets: [
-          "Row in u_itil_event (or em_event on full EM instances).",
-          "Status sent and event number on the message.",
-          "Same payload posted twice → two events (message_key = message id).",
-          "Structured logs in Grafana/Loki by correlation id and user UUID.",
+          "status sent + event number.",
+          "Logs in Grafana/Loki by correlation id.",
         ],
       },
     ];
 
-    const pathD = (() => {
-      const pts = STAGES.map(s => [s.x, s.y]);
+    const STAGES_SPAM = [
+      {
+        id: "client", x: 72, y: 200, label: "Caller", sub: "bob (blocked)",
+        title: "1. Same API call — blocked user",
+        detail: "bob uses the same POST /events contract, but their mediation UUID is on the block list.",
+        bullets: [
+          "Same gateway and JSON payload shape as a normal sender.",
+          "Identity still comes from WSO2 headers, not the body.",
+        ],
+      },
+      {
+        id: "wso2", x: 240, y: 200, label: "WSO2", sub: "API Manager",
+        title: "2. Gateway still authenticates bob",
+        detail: "OAuth succeeds; mediation sets X-User-Name: bob and the stable UUID.",
+        bullets: [
+          "Being blocked is enforced in ingest, not at the gateway.",
+          "Useful for ITIL suppression without sharing SN credentials.",
+        ],
+      },
+      {
+        id: "ingest", x: 420, y: 200, label: "Ingest", sub: "block list hit",
+        title: "3. Ingest — UUID blocked, agent skipped",
+        detail: "No ReAct loop, no priority queues — straight to events.spam.",
+        bullets: [
+          "202 still returned; message persisted for audit.",
+          "queue_name = events.spam · trace stays empty.",
+          "ITIL suppression before ServiceNow sees the signal.",
+        ],
+      },
+      {
+        id: "spamq", x: 640, y: 280, label: "events.spam", sub: "RabbitMQ",
+        title: "4. Spam queue",
+        detail: "Dedicated queue for blocked senders.",
+        bullets: [
+          "Same exchange events; routing key events.spam.",
+          "Delivery worker is the consumer (same process as normal events).",
+        ],
+      },
+      {
+        id: "delivery", x: 880, y: 280, label: "Delivery", sub: "mail only",
+        title: "5. Delivery — no ServiceNow",
+        detail: "Consumer detects spam queue and sends notification mail only.",
+        bullets: [
+          "Subject: Spammer detected.",
+          "Body: event was not processed + username, UUID, message id.",
+          "ServiceNow is not called.",
+        ],
+      },
+      {
+        id: "mail", x: 1100, y: 280, label: "Mailpit", sub: "not_processed",
+        title: "6. Suppressed — status not_processed",
+        detail: "End state for the spam branch.",
+        bullets: [
+          "Message status not_processed on the board.",
+          "If mail fails 3× → events.dlq.",
+          "Event is not rewritten as an incident.",
+        ],
+      },
+    ];
+
+    function buildPathD(stages) {
+      const pts = stages.map(s => [s.x, s.y]);
       let d = `M ${pts[0][0]} ${pts[0][1]}`;
       for (let i = 1; i < pts.length; i++) {
         const prev = pts[i - 1];
@@ -416,46 +467,74 @@
         d += ` C ${mx} ${prev[1]}, ${mx} ${cur[1]}, ${cur[0]} ${cur[1]}`;
       }
       return d;
-    })();
+    }
 
     const pathEl = document.getElementById("pathMain");
     const pathGlow = document.getElementById("pathGlow");
-    pathEl.setAttribute("d", pathD);
-    pathGlow.setAttribute("d", pathD);
-    document.getElementById("pathFork").setAttribute("d", "M 420 200 C 420 280, 520 300, 600 320");
+    const forkEl = document.getElementById("pathFork");
+    forkEl.setAttribute("d", "M 420 200 C 420 250, 520 280, 640 280");
 
     const nodesG = document.getElementById("nodes");
     const pillsG = document.getElementById("stepPills");
-    STAGES.forEach((s, i) => {
-      const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
-      g.classList.add("node");
-      g.dataset.index = i;
-      g.setAttribute("role", "button");
-      g.setAttribute("tabindex", "0");
-      g.setAttribute("aria-label", `Step ${i + 1}: ${s.label}`);
-      g.innerHTML = `
-        <circle class="ring" cx="${s.x}" cy="${s.y}" r="44"/>
-        <circle class="bg" cx="${s.x}" cy="${s.y}" r="36"/>
-        <text class="label" x="${s.x}" y="${s.y - 2}">${s.label}</text>
-        <text class="sub" x="${s.x}" y="${s.y + 14}">${s.sub}</text>
-      `;
-      g.addEventListener("click", () => setStep(i));
-      g.addEventListener("keydown", (e) => {
-        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setStep(i); }
-      });
-      nodesG.appendChild(g);
-
-      const pill = document.createElement("button");
-      pill.type = "button";
-      pill.className = "pill";
-      pill.textContent = `${i + 1}. ${s.label}`;
-      pill.addEventListener("click", () => setStep(i));
-      pillsG.appendChild(pill);
-    });
-
     const packetG = document.getElementById("packet");
-    const path = pathEl;
-    const totalLength = path.getTotalLength();
+
+    let pathMode = "normal";
+    let STAGES = STAGES_NORMAL;
+    let path = pathEl;
+    let totalLength = 0;
+
+    function refreshPathGeometry() {
+      const d = buildPathD(STAGES);
+      pathEl.setAttribute("d", d);
+      pathGlow.setAttribute("d", d);
+      path = pathEl;
+      totalLength = path.getTotalLength();
+    }
+
+    function rebuildStepsUi() {
+      nodesG.innerHTML = "";
+      pillsG.innerHTML = "";
+      STAGES.forEach((s, i) => {
+        const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
+        g.classList.add("node");
+        g.dataset.index = i;
+        g.setAttribute("role", "button");
+        g.setAttribute("tabindex", "0");
+        g.setAttribute("aria-label", `Step ${i + 1}: ${s.label}`);
+        g.innerHTML = `
+          <circle class="ring" cx="${s.x}" cy="${s.y}" r="44"/>
+          <circle class="bg" cx="${s.x}" cy="${s.y}" r="36"/>
+          <text class="label" x="${s.x}" y="${s.y - 2}">${s.label}</text>
+          <text class="sub" x="${s.x}" y="${s.y + 14}">${s.sub}</text>
+        `;
+        g.addEventListener("click", () => setStep(i));
+        g.addEventListener("keydown", (e) => {
+          if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setStep(i); }
+        });
+        nodesG.appendChild(g);
+
+        const pill = document.createElement("button");
+        pill.type = "button";
+        pill.className = "pill";
+        pill.textContent = `${i + 1}. ${s.label}`;
+        pill.addEventListener("click", () => setStep(i));
+        pillsG.appendChild(pill);
+      });
+      refreshPathGeometry();
+    }
+
+    function setPathMode(mode, silent = false) {
+      if (pathMode === mode) return;
+      pathMode = mode;
+      STAGES = mode === "spam" ? STAGES_SPAM : STAGES_NORMAL;
+      document.querySelectorAll("#pathToggle button").forEach((b) => {
+        b.classList.toggle("active", b.dataset.mode === mode);
+      });
+      document.body.classList.toggle("mode-spam", mode === "spam");
+      document.body.classList.toggle("mode-normal", mode === "normal");
+      rebuildStepsUi();
+      if (!silent) setStep(0, false);
+    }
 
     let stepIndex = 0;
     let animProgress = 0;
@@ -469,7 +548,7 @@
 
     function packetLines(stageId) {
       const base = ['{ "description": "checkout-api is down" }'];
-      const extra = {
+      const normal = {
         client: [],
         wso2: ["— gateway adds —", "X-User-Name: alice", "X-User-Uuid: ••••"],
         ingest: ["202 · saved · MySQL", "correlation_id assigned"],
@@ -478,6 +557,15 @@
         delivery: ["→ ServiceNow event API", "severity · message_key"],
         snow: ["status: sent", "event EM001…"],
       };
+      const spam = {
+        client: ["sender: bob (blocked UUID)"],
+        wso2: ["X-User-Name: bob", "X-User-Uuid: ••••"],
+        ingest: ["block list HIT", "agent skipped", "→ events.spam"],
+        spamq: ["queue: events.spam"],
+        delivery: ["Spammer detected (mail)", "ServiceNow not called"],
+        mail: ["status: not_processed"],
+      };
+      const extra = pathMode === "spam" ? spam : normal;
       return base.concat(extra[stageId] || []);
     }
 
@@ -528,7 +616,21 @@
 
       document.getElementById("btnPrev").disabled = idx === 0;
       document.getElementById("btnNext").disabled = idx === STAGES.length - 1;
-      document.getElementById("pathFork").style.opacity = idx === 2 ? "0.75" : "0.2";
+      const forkHot = pathMode === "spam" || (pathMode === "normal" && idx === 2);
+      forkEl.classList.toggle("inactive", !forkHot);
+    }
+
+    function showBranchInterstitial() {
+      document.getElementById("stepBadge").textContent = "Branch";
+      document.getElementById("stageTitle").textContent = "Blocked sender path (bob)";
+      document.getElementById("stageDetail").textContent =
+        "Same POST /events through WSO2 — ingest matches the UUID on the block list, skips ReAct, and publishes to events.spam.";
+      document.getElementById("stageBullets").innerHTML = [
+        "No priority queues · no ServiceNow row.",
+        "Delivery sends mail; status not_processed.",
+      ].map((b) => `<li>${b}</li>`).join("");
+      packetG.innerHTML = "";
+      forkEl.classList.remove("inactive");
     }
 
     function paint(progress) {
@@ -599,18 +701,22 @@
       if (e.key === "End") setStep(STAGES.length - 1);
     });
 
-    /* GIF capture mode (scripts/render_flow_gif.py) — slower holds for readable text */
+    /* GIF capture — normal path, branch card, spam path */
     const travelFrames = CAPTURE ? 18 : 12;
     const holdFrames = CAPTURE ? 48 : 11;
     const segmentFrames = travelFrames + holdFrames;
-    window.totalFlowFrames = (STAGES.length - 1) * segmentFrames + holdFrames;
+    const branchPauseFrames = CAPTURE ? 36 : 0;
 
-    function frameToProgress(frame) {
-      const totalFrames = window.totalFlowFrames;
+    function framesForStageList(stages) {
+      return (stages.length - 1) * segmentFrames + holdFrames;
+    }
+
+    function frameToProgress(stages, frame) {
+      const totalFrames = framesForStageList(stages);
       if (frame >= totalFrames - 1) return 1;
       const seg = Math.floor(frame / segmentFrames);
       const local = frame % segmentFrames;
-      const last = STAGES.length - 1;
+      const last = stages.length - 1;
       const segStart = Math.min(1, seg / last);
       const segEnd = Math.min(1, (seg + 1) / last);
       if (local < travelFrames) {
@@ -621,12 +727,36 @@
       return segEnd;
     }
 
+    const normalCaptureFrames = framesForStageList(STAGES_NORMAL);
+    const spamCaptureFrames = framesForStageList(STAGES_SPAM);
+    window.totalFlowFrames = normalCaptureFrames + branchPauseFrames + spamCaptureFrames;
+
     window.renderFlowFrame = function(frame) {
-      const progress = frameToProgress(frame);
-      const idx = Math.round(progress * (STAGES.length - 1));
-      stepIndex = idx;
+      if (frame < normalCaptureFrames) {
+        if (pathMode !== "normal") setPathMode("normal", true);
+        const progress = frameToProgress(STAGES_NORMAL, frame);
+        stepIndex = Math.round(progress * (STAGES_NORMAL.length - 1));
+        paint(progress);
+        return;
+      }
+      if (frame < normalCaptureFrames + branchPauseFrames) {
+        setPathMode("spam", true);
+        showBranchInterstitial();
+        return;
+      }
+      const local = frame - normalCaptureFrames - branchPauseFrames;
+      const progress = frameToProgress(STAGES_SPAM, local);
+      stepIndex = Math.round(progress * (STAGES_SPAM.length - 1));
       paint(progress);
     };
+
+    document.getElementById("pathToggle").addEventListener("click", (e) => {
+      const btn = e.target.closest("button[data-mode]");
+      if (btn) setPathMode(btn.dataset.mode);
+    });
+
+    document.body.classList.add("mode-normal");
+    rebuildStepsUi();
 
     if (CAPTURE) {
       window.renderFlowFrame(0);

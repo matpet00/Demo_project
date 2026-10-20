@@ -6,7 +6,7 @@
 
 ![Event flow — Caller → WSO2 → Ingest → ReAct agent → RabbitMQ → Delivery → ServiceNow](docs/images/flow.gif)
 
-**[▶ Interactive flow tour](https://matpet00.github.io/Demo_project/flow.html)** — click any step, use ← →, or **Play tour**; each stage has a plain-language caption (gateway, ReAct loop, queues, ServiceNow event).
+**[▶ Interactive flow tour](https://matpet00.github.io/Demo_project/flow.html)** — click any step, use ← →, or **Play tour**. Includes **Standard event** and **Blocked sender (bob → events.spam)** branches with captions at each stage.
 
 Screenshots montage: [overview.gif](docs/images/overview.gif)
 
