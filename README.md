@@ -1,8 +1,16 @@
 # Demo_project
 
+[![CI](https://github.com/matpet00/Demo_project/actions/workflows/ci.yml/badge.svg)](https://github.com/matpet00/Demo_project/actions/workflows/ci.yml)
+
+## Overview
+
+![Walkthrough: event board, RabbitMQ queues, blocked-user mail, Grafana logs](docs/images/overview.gif)
+
 If you hire integrators who only know “POST to ServiceNow and parse the response,” you get fragile scripts. This repo shows the other pattern: **ITIL Event Management** with a real gateway, async workers, and queues — so spikes, retries, and bad senders do not become ticket chaos or lost messages.
 
 Callers authenticate at **WSO2 API Manager** and post a **JSON event payload** (`description` or `short_description`, plus optional `X-Correlation-Id`). The gateway adds identity headers; ingest validates the body, classifies severity, routes by priority, and delivers a full **event record** to ServiceNow (not an incident). Failures stay visible: dedicated queues, structured logs in Grafana, setup separated from runtime code.
+
+**Quick review without Docker:** `python -m pip install -e ".[test]" && make test` (21 pytest cases, in-memory broker and store).
 
 Full behaviour, payloads, and diagrams → **[FLOW.md](FLOW.md)**.
 
@@ -39,8 +47,6 @@ flowchart LR
     delivery --> snow[ServiceNow events]
     delivery --> mail[SMTP / Mailpit]
 ```
-
-![Overview after events were processed](docs/images/desk.png)
 
 ---
 

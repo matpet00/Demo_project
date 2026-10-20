@@ -1,5 +1,7 @@
 # How the application behaves
 
+![Walkthrough: board → RabbitMQ → mail → Grafana](docs/images/overview.gif)
+
 ## Technologies
 
 - **WSO2 API Manager 4.5.0** is the gateway. It authenticates the user and adds the user's name and UUID to the call.
