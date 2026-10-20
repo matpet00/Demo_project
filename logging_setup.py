@@ -44,3 +44,15 @@ def log_event(event, **fields):
     clean = {key: value for key, value in fields.items() if key.lower() not in SECRET_KEYS}
     clean["event"] = event
     logging.getLogger("desk").info(event, extra={"desk": clean})
+
+
+def log_message(event, message, **fields):
+    payload = {
+        "correlation_id": message.get("correlation_id"),
+        "message_id": message.get("id"),
+        "user_uuid": message.get("user_uuid"),
+    }
+    if message.get("queue_name"):
+        payload["queue"] = message["queue_name"]
+    payload.update(fields)
+    log_event(event, **payload)

@@ -6,10 +6,9 @@ from quart import Quart, abort, jsonify, render_template, request
 
 from agents import make_brain, run_react
 from decorators import correlation_id, require_api_key
-from logging_setup import configure_logging, log_event
-from rabbitmq import connect_broker
+from logging_setup import configure_logging, log_event, log_message
+from rabbitmq import INCIDENTS, SPAM, connect_broker, priority_queue
 from store import connect_from_env
-from wso2 import user_uuid
 
 
 class AuthError(Exception):
@@ -44,11 +43,7 @@ def create_app(store=None, broker=None, brain_factory=None):
 
     @app.get("/")
     async def desk():
-        return await render_template(
-            "desk.html",
-            alice=user_uuid("alice"),
-            bob=user_uuid("bob"),
-        )
+        return await render_template("desk.html")
 
     @app.get("/favicon.ico")
     async def favicon():
@@ -81,21 +76,15 @@ def create_app(store=None, broker=None, brain_factory=None):
     @app.post("/add_spammer")
     @require_api_key
     async def add_spammer():
-        body = await _json()
-        user = (body.get("uuid") or "").strip()
-        if not user:
-            abort(400)
-        await app.store.add_spammer(user, body.get("username"))
+        user, username = await _spammer_body()
+        await app.store.add_spammer(user, username)
         log_event("spammer_added", user_uuid=user)
-        return jsonify({"uuid": user, "username": body.get("username")}), 201
+        return jsonify({"uuid": user, "username": username}), 201
 
     @app.post("/remove_spammer")
     @require_api_key
     async def remove_spammer():
-        body = await _json()
-        user = (body.get("uuid") or "").strip()
-        if not user:
-            abort(400)
+        user, _username = await _spammer_body()
         await app.store.remove_spammer(user)
         log_event("spammer_removed", user_uuid=user)
         return jsonify({"uuid": user})
@@ -114,6 +103,14 @@ async def _json():
     except TypeError:
         body = await request.get_json()
     return body or {}
+
+
+async def _spammer_body():
+    body = await _json()
+    user = (body.get("uuid") or "").strip()
+    if not user:
+        abort(400)
+    return user, body.get("username")
 
 
 async def _ingest(app, kind):
@@ -172,47 +169,27 @@ async def accept_message(
         "servicenow_number": None,
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
-    log_event(
-        "received",
-        correlation_id=correlation,
-        message_id=message["id"],
-        user_uuid=user_uuid,
-        kind=kind,
-    )
+    log_message("received", message, kind=kind)
     if await store.is_spammer(user_uuid):
-        message["queue_name"] = "events.spam"
-        log_event(
-            "spammer",
-            correlation_id=correlation,
-            message_id=message["id"],
-            user_uuid=user_uuid,
-            queue="events.spam",
-        )
+        message["queue_name"] = SPAM
+        log_message("spammer", message)
     elif kind == "incident":
-        message["queue_name"] = "incidents"
+        message["queue_name"] = INCIDENTS
     else:
         result = await run_react(description, brain_factory())
         for step in result["trace"]:
-            log_event(
+            log_message(
                 "react_step",
-                correlation_id=correlation,
-                message_id=message["id"],
-                user_uuid=user_uuid,
+                message,
                 thought=step.get("thought"),
                 action=step.get("action"),
             )
         message["priority"] = result["priority"]
         message["trace"] = result["trace"]
-        message["queue_name"] = f"events.{result['priority']}"
+        message["queue_name"] = priority_queue(result["priority"])
     await store.save_message(message)
     await broker.publish(message["queue_name"], message)
-    log_event(
-        "published",
-        correlation_id=correlation,
-        message_id=message["id"],
-        user_uuid=user_uuid,
-        queue=message["queue_name"],
-    )
+    log_message("published", message)
     return message
 
 

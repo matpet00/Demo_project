@@ -3,7 +3,7 @@ FROM python:3.11-slim
 WORKDIR /app
 COPY pyproject.toml ./
 RUN pip install --no-cache-dir "quart==0.20.0" "aio-pika==9.5.4" "aiomysql==0.2.0" "httpx==0.28.1"
-COPY api.py delivery.py agents.py rabbitmq.py servicenow.py mail.py store.py decorators.py logging_setup.py wso2.py openapi.yaml mediation.xml ./
+COPY api.py delivery.py agents.py rabbitmq.py servicenow.py mail.py store.py decorators.py logging_setup.py ./
 COPY templates ./templates
 EXPOSE 5000
 CMD ["python", "api.py"]

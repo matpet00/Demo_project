@@ -47,7 +47,8 @@
     button, .chip { border: 1px solid var(--rule); background: transparent; color: inherit; font: inherit; padding: 8px 10px; cursor: pointer; }
     button.primary { background: var(--ink); color: var(--paper); }
     .tape h2, .spammers h2 { font-family: Fraunces, Georgia, serif; font-weight: 560; margin: 0 0 12px; }
-    .msg { display: grid; grid-template-columns: 88px 1fr auto; gap: 10px; width: 100%; text-align: left; margin-bottom: 8px; }
+    .msg { display: grid; grid-template-columns: minmax(11rem, 16rem) minmax(0, 1fr) auto; gap: 10px; width: 100%; text-align: left; margin-bottom: 8px; align-items: start; }
+    .msg span:first-child { overflow-wrap: anywhere; }
     .msg small { color: var(--muted); }
     .stamp { color: var(--stamp); font-weight: 680; letter-spacing: 0.08em; }
     .sent { color: var(--sent); }
@@ -60,7 +61,7 @@
     }
   </style>
 </head>
-<body data-alice="{{ alice }}" data-bob="{{ bob }}">
+<body>
   <header>
     <div>
       <p class="kicker">Wire room</p>
@@ -75,7 +76,7 @@
         <label for="username">Username</label>
         <input id="username" name="username" value="alice" autocomplete="off">
         <label for="user">Mediation UUID</label>
-        <input id="user" name="user" value="{{ alice }}" autocomplete="off">
+        <input id="user" name="user" value="" autocomplete="off">
         <div class="row">
           <button type="button" id="use-alice">alice</button>
           <button type="button" id="use-bob">bob</button>
@@ -111,23 +112,17 @@
     </section>
   </main>
   <script>
-    const root = document.body;
     const user = document.querySelector("#user");
     const username = document.querySelector("#username");
     const description = document.querySelector("#description");
     const note = document.querySelector("#form-note");
     let selected = null;
 
-    document.querySelector("#use-alice").onclick = () => fill("alice", root.dataset.alice);
-    document.querySelector("#use-bob").onclick = () => fill("bob", root.dataset.bob);
+    document.querySelector("#use-alice").onclick = () => { username.value = "alice"; };
+    document.querySelector("#use-bob").onclick = () => { username.value = "bob"; };
     document.querySelectorAll(".chip").forEach((chip) => {
       chip.onclick = () => { description.value = chip.dataset.text; };
     });
-
-    function fill(name, uuid) {
-      username.value = name;
-      user.value = uuid;
-    }
 
     document.querySelector("#composer").onsubmit = async (event) => {
       event.preventDefault();
@@ -169,12 +164,12 @@
     }
 
     function render(board) {
-      const counts = { "events.1": 0, "events.2": 0, "events.3": 0, "events.4": 0, "events.5": 0, "events.spam": 0, incidents: 0 };
+      const counts = { priority1_queue: 0, priority2_queue: 0, priority3_queue: 0, priority4_queue: 0, priority5_queue: 0, "events.spam": 0, incidents: 0 };
       board.messages.forEach((message) => { counts[message.queue_name] = (counts[message.queue_name] || 0) + 1; });
       const lanes = document.querySelector("#lanes");
       lanes.replaceChildren();
       ["1", "2", "3", "4", "5", "spam"].forEach((name) => {
-        const key = name === "spam" ? "events.spam" : `events.${name}`;
+        const key = name === "spam" ? "events.spam" : `priority${name}_queue`;
         const lane = el("div", null, name === "spam" ? "lane spam" : "lane");
         lane.append(el("span", name === "spam" ? "Spam" : `Priority ${name}`), el("b", String(counts[key] || 0)));
         lanes.append(lane);

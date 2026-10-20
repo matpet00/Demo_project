@@ -13,7 +13,7 @@ import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
-INGEST = "http://127.0.0.1:5000"
+INGEST = "http://127.0.0.1:8080"
 DELIVERY = "http://127.0.0.1:5001"
 
 
@@ -96,7 +96,7 @@ def wait_status(message_id, expected):
 
 
 def smoke(env):
-    from wso2 import user_uuid
+    from preparation import user_uuid
 
     alice = user_uuid("alice")
     bob = user_uuid("bob")
@@ -134,9 +134,9 @@ def smoke(env):
         {"X-User-Uuid": bob, "X-User-Name": "bob"},
     )
     if [outage["queue_name"], slow["queue_name"], info["queue_name"], spam["queue_name"]] != [
-        "events.1",
-        "events.2",
-        "events.5",
+        "priority1_queue",
+        "priority2_queue",
+        "priority5_queue",
         "events.spam",
     ]:
         raise SystemExit(f"Unexpected queues: {outage} {slow} {info} {spam}")
@@ -170,7 +170,7 @@ def main():
         run(["docker", "compose", "logs", "--tail", "80", "provision", "wso2"], check=False)
         raise SystemExit(code)
     print("ok  wso2 provision", flush=True)
-    print("Desk http://localhost:5000")
+    print("Desk http://localhost:8080")
     print("Mailpit http://localhost:8025")
     print("Grafana http://localhost:3000")
 

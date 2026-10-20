@@ -4,7 +4,6 @@ from agents import ScriptedBrain
 from api import create_app
 from rabbitmq import MemoryBroker
 from store import MemoryStore
-from wso2 import user_uuid
 
 
 @pytest.fixture
@@ -38,10 +37,10 @@ async def test_description_chooses_queue_and_keeps_trace(app, broker):
     response = await _post(app, "/events", "checkout-api outage, payments are down", "alice-id")
     assert response.status_code == 202
     body = await response.get_json()
-    assert body["queue_name"] == "events.1"
+    assert body["queue_name"] == "priority1_queue"
     assert body["priority"] == 1
     assert body["trace"][0]["action"] == "lookup_service"
-    assert broker.queues["events.1"][0]["id"] == body["id"]
+    assert broker.queues["priority1_queue"][0]["id"] == body["id"]
 
 
 async def test_body_priority_is_ignored(app):
@@ -53,14 +52,14 @@ async def test_body_priority_is_ignored(app):
         extra={"priority": 1},
     )
     body = await response.get_json()
-    assert body["queue_name"] == "events.5"
+    assert body["queue_name"] == "priority5_queue"
 
 
 async def test_same_payload_is_queued_twice(app, broker):
     first = await _post(app, "/events", "edge-proxy latency is high and checkout is slow", "alice-id")
     second = await _post(app, "/events", "edge-proxy latency is high and checkout is slow", "alice-id")
     assert (await first.get_json())["id"] != (await second.get_json())["id"]
-    assert len(broker.queues["events.2"]) == 2
+    assert len(broker.queues["priority2_queue"]) == 2
 
 
 async def test_spammer_skips_the_agent(store, broker):
@@ -120,5 +119,3 @@ async def test_desk_renders_mediation_uuids(app):
     text = await response.get_data(as_text=True)
     assert response.status_code == 200
     assert "Desk" in text
-    assert user_uuid("alice") in text
-    assert user_uuid("bob") in text

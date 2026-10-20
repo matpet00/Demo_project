@@ -3,7 +3,16 @@ import os
 
 EXCHANGE = "events"
 DLQ = "events.dlq"
-WORK_QUEUES = [f"events.{priority}" for priority in range(1, 6)] + ["events.spam", "incidents"]
+FAILED_SNOW = "failed_snow_delivery"
+SPAM = "events.spam"
+INCIDENTS = "incidents"
+
+
+def priority_queue(priority):
+    return f"priority{priority}_queue"
+
+
+WORK_QUEUES = [priority_queue(priority) for priority in range(1, 6)] + [SPAM, INCIDENTS]
 MAX_ATTEMPTS = 3
 
 
@@ -15,11 +24,11 @@ def queues_from_env(value=None):
     for part in raw.split(","):
         part = part.strip()
         if part in {"1", "2", "3", "4", "5"}:
-            names.append(f"events.{part}")
+            names.append(priority_queue(part))
         elif part == "spam":
-            names.append("events.spam")
+            names.append(SPAM)
         elif part == "incidents":
-            names.append("incidents")
+            names.append(INCIDENTS)
         elif part in WORK_QUEUES:
             names.append(part)
         else:
@@ -29,9 +38,9 @@ def queues_from_env(value=None):
 
 class MemoryBroker:
     def __init__(self):
-        self.queues = {name: [] for name in WORK_QUEUES}
+        self.queues = {name: [] for name in [*WORK_QUEUES, DLQ, FAILED_SNOW]}
 
-    async def publish(self, queue_name, payload):
+    async def publish(self, queue_name, payload, headers=None):
         self.queues.setdefault(queue_name, []).append(json.loads(json.dumps(payload)))
 
     async def close(self):
@@ -56,7 +65,9 @@ class RabbitBroker:
             aio_pika.ExchangeType.DIRECT,
             durable=True,
         )
-        await self.channel.declare_queue(DLQ, durable=True)
+        for name in (DLQ, FAILED_SNOW):
+            queue = await self.channel.declare_queue(name, durable=True)
+            await queue.bind(self.exchange, routing_key=name)
         for name in WORK_QUEUES:
             queue = await self.channel.declare_queue(name, durable=True)
             await queue.bind(self.exchange, routing_key=name)
@@ -73,9 +84,9 @@ class RabbitBroker:
         )
         await self.exchange.publish(message, routing_key=queue_name)
 
-    async def consume(self, handler):
+    async def consume(self, handler, on_exhausted=None):
         async def _on_message(message):
-            await _deliver(self, message, handler)
+            await _deliver(self, message, handler, on_exhausted)
 
         for name in queues_from_env():
             queue = await self.channel.get_queue(name)
@@ -86,13 +97,29 @@ class RabbitBroker:
             await self.connection.close()
 
 
-async def connect_broker(url=None):
-    broker = RabbitBroker(url or os.environ["RABBIT_URL"])
-    await broker.connect()
-    return broker
+async def connect_broker(url=None, retries=30):
+    import asyncio
+
+    last = None
+    for _ in range(retries):
+        broker = RabbitBroker(url or os.environ["RABBIT_URL"])
+        try:
+            await broker.connect()
+            return broker
+        except Exception as exc:
+            last = exc
+            await broker.close()
+            await asyncio.sleep(1)
+    raise last
 
 
-async def _deliver(broker, message, handler):
+def _failure_queue(payload):
+    if payload.get("queue_name") == SPAM:
+        return DLQ
+    return FAILED_SNOW
+
+
+async def _deliver(broker, message, handler, on_exhausted=None):
     from logging_setup import log_event
 
     async with message.process(requeue=False, ignore_processed=True):
@@ -102,16 +129,26 @@ async def _deliver(broker, message, handler):
         except Exception as exc:
             headers = dict(message.headers or {})
             attempts = int(headers.get("x-attempts", 0)) + 1
+            exhausted = attempts >= MAX_ATTEMPTS
+            destination = _failure_queue(payload) if exhausted else payload.get("queue_name")
+            if destination == FAILED_SNOW:
+                event_name = FAILED_SNOW
+            elif exhausted:
+                event_name = "dlq"
+            else:
+                event_name = "retry"
             log_event(
-                "retry" if attempts < MAX_ATTEMPTS else "dlq",
+                event_name,
                 correlation_id=payload.get("correlation_id"),
                 message_id=payload.get("id"),
-                queue=payload.get("queue_name"),
+                queue=destination,
                 error=type(exc).__name__,
                 attempt=attempts,
             )
-            if attempts >= MAX_ATTEMPTS:
-                await broker.publish(DLQ, payload, headers={"x-attempts": attempts})
+            if exhausted:
+                await broker.publish(destination, payload, headers={"x-attempts": attempts, "error": type(exc).__name__})
+                if on_exhausted is not None:
+                    await on_exhausted(payload)
             else:
                 await broker.publish(
                     payload["queue_name"],

@@ -1,14 +1,16 @@
 # Desk
 
-Events come in through WSO2. A ReAct loop reads the description and chooses priority 1–5. RabbitMQ carries the message. A second service sends it to ServiceNow, unless the caller UUID is on the spammer list. Then the event is not sent and an email says so.
+A caller authenticates at WSO2 API Manager and posts an event. The gateway adds the user's name and UUID. One async Python service then decides what happens. An AI agent reads the description and assigns priority 1–5, a blocked user is stopped before any ticket exists, and an incident is a separate route with its own queue. RabbitMQ carries every accepted call as its own message. A second service delivers it to ServiceNow, or sends mail when the user is blocked.
+
+The project is there to show that path with the failure cases left visible. The same description sent ten times becomes ten events. A ServiceNow error is retried and then parked on its own queue, and it is not rewritten as an incident. A blocked user gets an email that the event was not processed. Logs are one JSON line each and show up in Grafana, filterable by user, correlation id, and queue. Users, the API subscription, and the ServiceNow event table are created once by `preparation.py`, so the running services only accept, route, and deliver. The behaviour, payloads, and diagrams are in [FLOW.md](FLOW.md).
 
 ## Flow
 
 `POST /events` and `POST /incidents` hit WSO2 API Manager 4.5.0. The mediation reads the authenticated username and sets `X-User-Name` and `X-User-Uuid` (UUID version 5 of that name). Both routes use that same UUID.
 
-The ingest service on port 5000 checks the UUID against MySQL. A match goes to `events.spam` and the agent does not run. Any other event goes through the ReAct loop in `agents.py`. The loop calls `lookup_service` and `classify_priority`, stores the Thought / Action / Observation trace, and publishes to `events.1` … `events.5`. Incidents that are not spam go to `incidents`.
+The ingest service on port 5000 checks the UUID against MySQL. A match goes to `events.spam` and the agent does not run. Any other event goes through the ReAct loop in `agents.py`. The loop calls `lookup_service` and `classify_priority`, stores the Thought / Action / Observation trace, and publishes to `priority1_queue` … `priority5_queue`. Incidents that are not spam go to `incidents`.
 
-The delivery service on port 5001 consumes with `aio_pika`. Each accepted POST is its own message, so the same description sent ten times is sent to ServiceNow ten times. A failed call is retried and then moved to `events.dlq`. The spam consumer does not call ServiceNow. It sends mail: spammer detected, event was not processed, plus the username and UUID.
+The delivery service on port 5001 consumes with `aio_pika`. Each accepted POST is its own message, so the same description sent ten times is sent to ServiceNow ten times. A failed ServiceNow call is retried and then moved to `failed_snow_delivery`. The spam consumer does not call ServiceNow. It sends mail: spammer detected, event was not processed, plus the username and UUID.
 
 Both HTTP services are Quart, so the request and the broker share one asyncio loop.
 
@@ -19,11 +21,11 @@ cp .env.example .env
 python build.py
 ```
 
-`build.py` runs the unit tests, builds every image, starts Compose, checks the three priorities and the spammer mail, then waits until WSO2 has published the API.
+`build.py` runs the unit tests, builds every image, starts Compose, checks the three priorities and the spammer mail, then waits until preparation finishes. `python preparation.py` on its own creates the WSO2 users, the API subscription, the ServiceNow event table, and bob's spammer row.
 
 Then open:
 
-- Desk: http://localhost:5000
+- Desk: http://localhost:8080
 - Mailpit: http://localhost:8025
 - Grafana: http://localhost:3000 (anonymous admin, Loki is already attached)
 - RabbitMQ: http://localhost:15672 (`events` / `events`)
@@ -54,7 +56,7 @@ curl -k -H "Authorization: Bearer $TOKEN" \
 
 ## ServiceNow
 
-Set `SERVICENOW_BASE_URL`, `SERVICENOW_USER`, and `SERVICENOW_PASSWORD` in `.env`. Events go to `/api/global/em/jsonv2`, and to the `em_event` table if Event Management is not enabled. Incidents go to `/api/now/table/incident`. Without those variables the delivery service uses an in-memory mock (`EM0010001`, `INC0010001`).
+Set `SERVICENOW_BASE_URL`, `SERVICENOW_USER`, and `SERVICENOW_PASSWORD` in `.env`. Events go to `/api/global/em/jsonv2`, then to the `em_event` table. This instance has neither, so `python preparation.py` creates `u_itil_event` and `POST /api/now/desk_events/event`. Events are never turned into incidents. Incidents go only to `/api/now/table/incident`. A failed event delivery is retried and then parked on `failed_snow_delivery`. Without those variables the delivery service uses an in-memory mock (`EM0010001`, `INC0010001`).
 
 ## Logs
 
@@ -71,4 +73,4 @@ The tests do not start WSO2, MySQL, or Grafana. They use an in-memory store and 
 
 ## Layout
 
-`api.py` and `delivery.py` are the two processes. `agents.py` is the loop. `rabbitmq.py` is `aio_pika`. `servicenow.py`, `mail.py`, `store.py`, `wso2.py`, `mediation.xml`, `decorators.py`, and `logging_setup.py` are the rest. `@idempotent` is implemented and tested, and it is not wrapped around event delivery: a repeated payload is a new event.
+`api.py` and `delivery.py` are the two processes. `agents.py` is the loop. `rabbitmq.py` is `aio_pika`. `servicenow.py` only sends events and incidents. `mail.py`, `store.py`, `decorators.py`, and `logging_setup.py` are the rest of the runtime. `preparation.py` creates the WSO2 users, the API subscription, the ServiceNow event table, and bob's spammer row. `@idempotent` is implemented and tested, and it is not wrapped around event delivery: a repeated payload is a new event.

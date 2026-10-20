@@ -33,5 +33,5 @@ py-modules = [
   "store",
   "decorators",
   "logging_setup",
-  "wso2",
+  "preparation",
 ]

@@ -73,7 +73,7 @@ services:
       RABBIT_URL: amqp://events:events@rabbitmq:5672/
       PORT: "5000"
     ports:
-      - "5000:5000"
+      - "8080:5000"
     depends_on:
       mysql:
         condition: service_healthy
@@ -117,8 +117,8 @@ services:
   provision:
     build:
       context: .
-      dockerfile: Dockerfile.ingest
-    command: ["python", "wso2.py"]
+      dockerfile: Dockerfile.prepare
+    command: ["python", "preparation.py"]
     env_file: .env
     environment:
       WSO2_HOST: https://wso2:9443

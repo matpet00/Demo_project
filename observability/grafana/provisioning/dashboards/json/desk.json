@@ -1,21 +1,112 @@
 {
-  "title": "Desk logs",
+  "title": "Desk",
   "uid": "desk-logs",
   "timezone": "browser",
   "schemaVersion": 39,
+  "refresh": "10s",
+  "time": {"from": "now-6h", "to": "now"},
+  "templating": {
+    "list": [
+      {
+        "name": "user_uuid",
+        "type": "textbox",
+        "label": "User UUID",
+        "query": ".*",
+        "current": {"text": ".*", "value": ".*"},
+        "options": [{"text": ".*", "value": ".*", "selected": true}]
+      },
+      {
+        "name": "correlation_id",
+        "type": "textbox",
+        "label": "Correlation ID",
+        "query": ".*",
+        "current": {"text": ".*", "value": ".*"},
+        "options": [{"text": ".*", "value": ".*", "selected": true}]
+      },
+      {
+        "name": "queue",
+        "type": "textbox",
+        "label": "Queue",
+        "query": ".*",
+        "current": {"text": ".*", "value": ".*"},
+        "options": [{"text": ".*", "value": ".*", "selected": true}]
+      }
+    ]
+  },
   "panels": [
     {
-      "type": "logs",
-      "title": "Processing",
-      "gridPos": {"h": 18, "w": 24, "x": 0, "y": 0},
+      "type": "stat",
+      "title": "Events / min",
+      "gridPos": {"h": 4, "w": 8, "x": 0, "y": 0},
       "datasource": {"type": "loki", "uid": "loki"},
+      "fieldConfig": {"defaults": {"unit": "short", "decimals": 1}},
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "colorMode": "value"},
       "targets": [
         {
           "refId": "A",
-          "expr": "{service=~\"ingest|delivery\"}"
+          "expr": "sum(count_over_time({service=\"ingest\"} |~ \"$user_uuid\" |~ \"$correlation_id\" |~ \"$queue\" | json | event=\"received\" [$__interval]))"
         }
-      ],
-      "options": {"showTime": true, "showLabels": true, "wrapLogMessage": true}
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Success rate",
+      "gridPos": {"h": 4, "w": 8, "x": 8, "y": 0},
+      "datasource": {"type": "loki", "uid": "loki"},
+      "fieldConfig": {"defaults": {"unit": "percentunit", "min": 0, "max": 1, "decimals": 1}},
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "colorMode": "value"},
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(count_over_time({service=\"delivery\"} |~ \"$user_uuid\" |~ \"$correlation_id\" |~ \"$queue\" | json | event=\"sent\" [$__range])) / sum(count_over_time({service=\"delivery\"} |~ \"$user_uuid\" |~ \"$correlation_id\" |~ \"$queue\" | json | event=~\"sent|failed_snow_delivery\" [$__range]))"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Failed ServiceNow",
+      "gridPos": {"h": 4, "w": 8, "x": 16, "y": 0},
+      "datasource": {"type": "loki", "uid": "loki"},
+      "fieldConfig": {"defaults": {"unit": "short", "decimals": 0}},
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "colorMode": "value"},
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(count_over_time({service=\"delivery\"} |~ \"$user_uuid\" |~ \"$correlation_id\" |~ \"$queue\" | json | event=\"failed_snow_delivery\" [$__range]))"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Sent and failed",
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 4},
+      "datasource": {"type": "loki", "uid": "loki"},
+      "fieldConfig": {"defaults": {"unit": "short"}},
+      "targets": [
+        {
+          "refId": "A",
+          "legendFormat": "sent",
+          "expr": "sum(count_over_time({service=\"delivery\"} |~ \"$user_uuid\" |~ \"$correlation_id\" |~ \"$queue\" | json | event=\"sent\" [$__interval]))"
+        },
+        {
+          "refId": "B",
+          "legendFormat": "failed",
+          "expr": "sum(count_over_time({service=\"delivery\"} |~ \"$user_uuid\" |~ \"$correlation_id\" |~ \"$queue\" | json | event=\"failed_snow_delivery\" [$__interval]))"
+        }
+      ]
+    },
+    {
+      "type": "logs",
+      "title": "Events",
+      "gridPos": {"h": 14, "w": 24, "x": 0, "y": 12},
+      "datasource": {"type": "loki", "uid": "loki"},
+      "options": {"showTime": true, "showLabels": true, "wrapLogMessage": true, "dedupStrategy": "none"},
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "{service=~\"ingest|delivery\"} |~ \"$user_uuid\" |~ \"$correlation_id\" |~ \"$queue\""
+        }
+      ]
     }
   ]
 }

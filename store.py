@@ -199,7 +199,7 @@ async def connect_from_env(retries=30):
                 user=os.environ.get("MYSQL_USER", "events"),
                 password=os.environ.get("MYSQL_PASSWORD", "events"),
                 db=os.environ.get("MYSQL_DATABASE", "events"),
-                autocommit=False,
+                autocommit=True,
             )
             store = MySQLStore(pool)
             await store.init()

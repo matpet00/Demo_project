@@ -38,6 +38,8 @@ def _number(payload):
     if not isinstance(payload, dict):
         return None
     result = payload.get("result", payload)
+    if isinstance(result, dict) and "result" in result:
+        result = result["result"]
     if isinstance(result, list) and result:
         result = result[0]
     if isinstance(result, dict):
@@ -75,6 +77,8 @@ class LiveServiceNow:
         response = await self._post("/api/global/em/jsonv2", {"records": [record]})
         if response.status_code in {400, 404, 501}:
             response = await self._post("/api/now/table/em_event", record)
+        if response.status_code in {400, 404, 501}:
+            response = await self._post("/api/now/desk_events/event", {"records": [record]})
         response.raise_for_status()
         return _number(response.json()) or "accepted"
 

@@ -4,5 +4,6 @@ providers:
   - name: desk
     folder: Desk
     type: file
+    updateIntervalSeconds: 10
     options:
       path: /etc/grafana/provisioning/dashboards/json

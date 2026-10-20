@@ -3,9 +3,9 @@ import os
 from quart import Quart, jsonify
 
 from decorators import correlation_id
-from logging_setup import configure_logging, log_event
+from logging_setup import configure_logging, log_message
 from mail import from_env as mail_from_env
-from rabbitmq import RabbitBroker, connect_broker
+from rabbitmq import FAILED_SNOW, SPAM, RabbitBroker, connect_broker
 from servicenow import from_env as snow_from_env
 from store import connect_from_env
 
@@ -29,7 +29,7 @@ def create_app(store=None, broker=None, snow=None, mailer=None):
         if app.broker is None:
             app.broker = await connect_broker()
         if isinstance(app.broker, RabbitBroker):
-            app.add_background_task(app.broker.consume, _handler(app))
+            app.add_background_task(app.broker.consume, _handler(app), _exhausted(app))
 
     @app.get("/healthz")
     async def healthz():
@@ -53,44 +53,34 @@ def _handler(app):
     return handle
 
 
+def _exhausted(app):
+    async def mark(payload):
+        if payload.get("queue_name") == SPAM:
+            return
+        await app.store.update_message(payload["id"], status=FAILED_SNOW)
+
+    return mark
+
+
 async def handle_message(message, snow, mailer, store):
     token = correlation_id.set(message.get("correlation_id"))
     try:
-        log_event(
-            "consumed",
-            correlation_id=message.get("correlation_id"),
-            message_id=message.get("id"),
-            user_uuid=message.get("user_uuid"),
-            queue=message.get("queue_name"),
-        )
-        if message.get("queue_name") == "events.spam":
+        log_message("consumed", message)
+        if message.get("queue_name") == SPAM:
             await mailer.send_spammer_notice(
                 username=message.get("username"),
                 user_uuid=message["user_uuid"],
                 event_id=message["id"],
             )
             await store.update_message(message["id"], status="not_processed")
-            log_event(
-                "not_processed",
-                correlation_id=message.get("correlation_id"),
-                message_id=message["id"],
-                user_uuid=message.get("user_uuid"),
-                queue="events.spam",
-            )
+            log_message("not_processed", message)
             return "not_processed"
         if message.get("kind") == "incident":
             number = await snow.push_incident(message)
         else:
             number = await snow.push_event(message)
         await store.update_message(message["id"], status="sent", servicenow_number=number)
-        log_event(
-            "sent",
-            correlation_id=message.get("correlation_id"),
-            message_id=message["id"],
-            user_uuid=message.get("user_uuid"),
-            queue=message.get("queue_name"),
-            servicenow_number=number,
-        )
+        log_message("sent", message, servicenow_number=number)
         return number
     finally:
         correlation_id.reset(token)

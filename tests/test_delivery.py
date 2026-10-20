@@ -1,6 +1,8 @@
+import httpx
+
 from delivery import handle_message
 from mail import RecordingMailer
-from servicenow import MockServiceNow
+from servicenow import LiveServiceNow, MockServiceNow
 from store import MemoryStore
 
 
@@ -23,8 +25,8 @@ def _message(message_id, queue_name, kind="event", priority=1):
 async def test_event_is_sent_and_repeated_payloads_stay_distinct():
     store = MemoryStore()
     snow = MockServiceNow()
-    first = _message("one", "events.1")
-    second = _message("two", "events.1")
+    first = _message("one", "priority1_queue")
+    second = _message("two", "priority1_queue")
     await store.save_message(first)
     await store.save_message(second)
     assert await handle_message(first, snow, RecordingMailer(), store) == "EM0010001"
@@ -51,6 +53,27 @@ async def test_spam_sends_mail_and_skips_servicenow():
     assert "bob-uuid" in mailer.sent[0]["body"]
     assert "bob" in mailer.sent[0]["body"]
     assert (await store.get_message("spam-1"))["status"] == "not_processed"
+
+
+async def test_event_is_not_turned_into_an_incident_when_event_api_fails():
+    seen = []
+
+    def handler(request):
+        seen.append(request.url.path)
+        if request.url.path == "/api/global/em/jsonv2":
+            return httpx.Response(400, json={"error": {"message": "no resource"}})
+        if request.url.path == "/api/now/table/em_event":
+            return httpx.Response(400, json={"error": {"message": "Invalid table em_event"}})
+        if request.url.path == "/api/now/desk_events/event":
+            return httpx.Response(201, json={"result": [{"number": "EM10001"}]})
+        return httpx.Response(201, json={"result": {"number": "INC0010099"}})
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    snow = LiveServiceNow("https://example.service-now.com", "desk", "secret", client)
+    number = await snow.push_event(_message("evt-1", "priority1_queue"))
+    assert number == "EM10001"
+    assert "/api/now/table/incident" not in seen
+    await client.aclose()
 
 
 async def test_incident_uses_the_incident_api():
