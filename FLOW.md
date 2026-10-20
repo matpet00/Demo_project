@@ -1,6 +1,6 @@
 # How the application behaves
 
-![Walkthrough: board → RabbitMQ → mail → Grafana](docs/images/overview.gif)
+![Animated flow: API gateway through queues to delivery](docs/images/flow.gif)
 
 ## Technologies
 
