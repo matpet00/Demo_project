@@ -1,0 +1,131 @@
+services:
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: events
+      MYSQL_USER: events
+      MYSQL_PASSWORD: events
+    ports:
+      - "3306:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uevents", "-pevents"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    environment:
+      RABBITMQ_DEFAULT_USER: events
+      RABBITMQ_DEFAULT_PASS: events
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 10s
+      retries: 30
+
+  mailpit:
+    image: axllent/mailpit:v1.21
+    ports:
+      - "8025:8025"
+      - "1025:1025"
+
+  loki:
+    image: grafana/loki:3.2.1
+    command: ["-config.file=/etc/loki/config.yml"]
+    volumes:
+      - ./observability/loki-config.yml:/etc/loki/config.yml:ro
+
+  alloy:
+    image: grafana/alloy:v1.5.1
+    command: ["run", "--server.http.listen-addr=0.0.0.0:12345", "/etc/alloy/config.alloy"]
+    volumes:
+      - ./observability/alloy.alloy:/etc/alloy/config.alloy:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      - loki
+
+  grafana:
+    image: grafana/grafana:11.3.0
+    ports:
+      - "3000:3000"
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+    depends_on:
+      - loki
+
+  ingest:
+    build:
+      context: .
+      dockerfile: Dockerfile.ingest
+    env_file: .env
+    environment:
+      SERVICE_NAME: ingest
+      MYSQL_HOST: mysql
+      RABBIT_URL: amqp://events:events@rabbitmq:5672/
+      PORT: "5000"
+    ports:
+      - "5000:5000"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  delivery:
+    build:
+      context: .
+      dockerfile: Dockerfile.delivery
+    env_file: .env
+    environment:
+      SERVICE_NAME: delivery
+      MYSQL_HOST: mysql
+      RABBIT_URL: amqp://events:events@rabbitmq:5672/
+      SMTP_HOST: mailpit
+      SMTP_PORT: "1025"
+      PORT: "5001"
+    ports:
+      - "5001:5001"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  wso2:
+    build:
+      context: .
+      dockerfile: Dockerfile.wso2
+    ports:
+      - "9443:9443"
+      - "8243:8243"
+    healthcheck:
+      test: ["CMD", "curl", "-k", "-f", "https://localhost:9443/carbon/admin/login.jsp"]
+      interval: 15s
+      timeout: 10s
+      retries: 40
+      start_period: 180s
+
+  provision:
+    build:
+      context: .
+      dockerfile: Dockerfile.ingest
+    command: ["python", "wso2.py"]
+    env_file: .env
+    environment:
+      WSO2_HOST: https://wso2:9443
+      INGEST_URL: http://ingest:5000
+    depends_on:
+      wso2:
+        condition: service_healthy
+      ingest:
+        condition: service_started
+    restart: "no"

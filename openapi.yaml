@@ -1,0 +1,87 @@
+openapi: 3.0.3
+info:
+  title: Desk
+  version: v1
+  description: Event and incident ingest. The caller identity is the UUID added by the WSO2 mediation.
+paths:
+  /events:
+    post:
+      operationId: postEvent
+      summary: Accept an event and let the ReAct loop choose priority 1-5.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Payload"
+      responses:
+        "202":
+          description: Queued
+        "401":
+          description: Missing X-User-Uuid
+  /incidents:
+    post:
+      operationId: postIncident
+      summary: Accept an incident for the same user UUID.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Payload"
+      responses:
+        "202":
+          description: Queued
+        "401":
+          description: Missing X-User-Uuid
+  /add_spammer:
+    post:
+      operationId: addSpammer
+      summary: Block a mediation UUID.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Spammer"
+      responses:
+        "201":
+          description: Stored
+  /remove_spammer:
+    post:
+      operationId: removeSpammer
+      summary: Unblock a mediation UUID.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Spammer"
+      responses:
+        "200":
+          description: Removed
+  /list_spammers:
+    get:
+      operationId: listSpammers
+      summary: List blocked mediation UUIDs.
+      responses:
+        "200":
+          description: The block list
+components:
+  schemas:
+    Payload:
+      type: object
+      required: [description]
+      properties:
+        description:
+          type: string
+        short_description:
+          type: string
+    Spammer:
+      type: object
+      required: [uuid]
+      properties:
+        uuid:
+          type: string
+        username:
+          type: string

@@ -1,0 +1,13 @@
+FROM wso2/wso2am:4.5.0
+
+USER root
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/*
+COPY mediation.xml /home/wso2carbon/wso2am-4.5.0/repository/deployment/server/synapse-configs/default/sequences/user-uuid.xml
+COPY wso2-entrypoint.sh /home/wso2carbon/wso2-entrypoint.sh
+RUN chmod +x /home/wso2carbon/wso2-entrypoint.sh \
+    && chown wso2carbon:wso2 /home/wso2carbon/wso2-entrypoint.sh \
+    && chown wso2carbon:wso2 /home/wso2carbon/wso2am-4.5.0/repository/deployment/server/synapse-configs/default/sequences/user-uuid.xml
+USER 10001
+ENTRYPOINT ["/home/wso2carbon/wso2-entrypoint.sh"]

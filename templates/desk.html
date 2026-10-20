@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Desk</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,560;9..144,680&family=Inconsolata:wght@460;680&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --paper: #efe4cf;
+      --ink: #1b1712;
+      --rule: #2a241c;
+      --stamp: #9d1c14;
+      --sent: #1c6b45;
+      --muted: #6d6254;
+      --lane: #f7f1e4;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--ink);
+      font-family: "Inconsolata", ui-monospace, monospace;
+      background:
+        radial-gradient(circle at 12% 8%, rgba(157, 28, 20, 0.08), transparent 28%),
+        linear-gradient(180deg, rgba(27, 23, 18, 0.04) 1px, transparent 1px) 0 0 / 100% 28px,
+        var(--paper);
+    }
+    header, main { width: min(1180px, calc(100% - 32px)); margin: 0 auto; }
+    header { padding: 28px 0 8px; display: flex; justify-content: space-between; gap: 24px; align-items: end; }
+    .kicker { margin: 0; letter-spacing: 0.18em; text-transform: uppercase; font-size: 12px; color: var(--stamp); }
+    h1 { margin: 4px 0 0; font-family: Fraunces, Georgia, serif; font-size: clamp(52px, 8vw, 92px); font-weight: 560; letter-spacing: -0.04em; line-height: 0.85; }
+    .sub { margin: 8px 0 0; max-width: 36ch; color: var(--muted); }
+    .lanes { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; margin: 22px 0; }
+    .lane { background: var(--lane); border: 1px solid var(--rule); min-height: 92px; padding: 10px; }
+    .lane b { display: block; font-family: Fraunces, Georgia, serif; font-size: 28px; }
+    .lane span { color: var(--muted); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; }
+    .lane.spam { background: #f3d7d1; }
+    .split { display: grid; grid-template-columns: 340px 1fr; gap: 18px; align-items: start; }
+    form, .tape, .spammers { border: 1px solid var(--rule); background: rgba(247, 241, 228, 0.86); padding: 16px; }
+    label { display: block; margin: 10px 0 4px; font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+    input, textarea { width: 100%; border: 0; border-bottom: 1px solid var(--rule); background: transparent; color: inherit; font: inherit; padding: 8px 0; }
+    textarea { min-height: 88px; resize: vertical; }
+    .row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+    button, .chip { border: 1px solid var(--rule); background: transparent; color: inherit; font: inherit; padding: 8px 10px; cursor: pointer; }
+    button.primary { background: var(--ink); color: var(--paper); }
+    .tape h2, .spammers h2 { font-family: Fraunces, Georgia, serif; font-weight: 560; margin: 0 0 12px; }
+    .msg { display: grid; grid-template-columns: 88px 1fr auto; gap: 10px; width: 100%; text-align: left; margin-bottom: 8px; }
+    .msg small { color: var(--muted); }
+    .stamp { color: var(--stamp); font-weight: 680; letter-spacing: 0.08em; }
+    .sent { color: var(--sent); }
+    .step { border-top: 1px dashed var(--rule); padding: 8px 0; }
+    .step strong { font-family: Fraunces, Georgia, serif; }
+    .spammers { margin: 18px 0 40px; }
+    @media (max-width: 860px) {
+      .lanes, .split { grid-template-columns: 1fr; }
+      header { display: block; }
+    }
+  </style>
+</head>
+<body data-alice="{{ alice }}" data-bob="{{ bob }}">
+  <header>
+    <div>
+      <p class="kicker">Wire room</p>
+      <h1>Desk</h1>
+    </div>
+    <p class="sub">The description chooses priority 1–5. A blocked UUID never reaches ServiceNow.</p>
+  </header>
+  <main>
+    <section class="lanes" id="lanes"></section>
+    <section class="split">
+      <form id="composer">
+        <label for="username">Username</label>
+        <input id="username" name="username" value="alice" autocomplete="off">
+        <label for="user">Mediation UUID</label>
+        <input id="user" name="user" value="{{ alice }}" autocomplete="off">
+        <div class="row">
+          <button type="button" id="use-alice">alice</button>
+          <button type="button" id="use-bob">bob</button>
+        </div>
+        <label for="description">Description</label>
+        <textarea id="description">checkout-api outage, payments are down</textarea>
+        <div class="row">
+          <button type="button" class="chip" data-text="checkout-api outage, payments are down">Outage</button>
+          <button type="button" class="chip" data-text="edge-proxy latency is high and checkout is slow">Slow</button>
+          <button type="button" class="chip" data-text="nightly report finished, informational notice">Info</button>
+        </div>
+        <div class="row">
+          <button class="primary" type="submit" data-kind="event">Send event</button>
+          <button type="submit" data-kind="incident">Send incident</button>
+        </div>
+        <label for="api-key">API key for the block list</label>
+        <input id="api-key" value="">
+        <div class="row">
+          <button type="button" id="block">Block this UUID</button>
+          <button type="button" id="unblock">Remove</button>
+        </div>
+        <p id="form-note" class="sub"></p>
+      </form>
+      <section class="tape">
+        <h2>Trace</h2>
+        <div id="messages"></div>
+        <div id="trace"></div>
+      </section>
+    </section>
+    <section class="spammers">
+      <h2>Spammers</h2>
+      <div id="spammers"></div>
+    </section>
+  </main>
+  <script>
+    const root = document.body;
+    const user = document.querySelector("#user");
+    const username = document.querySelector("#username");
+    const description = document.querySelector("#description");
+    const note = document.querySelector("#form-note");
+    let selected = null;
+
+    document.querySelector("#use-alice").onclick = () => fill("alice", root.dataset.alice);
+    document.querySelector("#use-bob").onclick = () => fill("bob", root.dataset.bob);
+    document.querySelectorAll(".chip").forEach((chip) => {
+      chip.onclick = () => { description.value = chip.dataset.text; };
+    });
+
+    function fill(name, uuid) {
+      username.value = name;
+      user.value = uuid;
+    }
+
+    document.querySelector("#composer").onsubmit = async (event) => {
+      event.preventDefault();
+      const kind = event.submitter?.dataset.kind || "event";
+      const response = await fetch(kind === "incident" ? "/incidents" : "/events", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-User-Uuid": user.value.trim(),
+          "X-User-Name": username.value.trim(),
+        },
+        body: JSON.stringify({ description: description.value.trim() }),
+      });
+      note.textContent = response.ok ? "Queued." : "The desk refused that message.";
+      await refresh();
+    };
+
+    document.querySelector("#block").onclick = () => spammer("/add_spammer");
+    document.querySelector("#unblock").onclick = () => spammer("/remove_spammer");
+
+    async function spammer(path) {
+      const response = await fetch(path, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-API-Key": document.querySelector("#api-key").value,
+        },
+        body: JSON.stringify({ uuid: user.value.trim(), username: username.value.trim() }),
+      });
+      note.textContent = response.ok ? "Block list updated." : "Block list refused the key.";
+      await refresh();
+    }
+
+    function el(tag, text, className) {
+      const node = document.createElement(tag);
+      if (className) node.className = className;
+      if (text != null) node.textContent = text;
+      return node;
+    }
+
+    function render(board) {
+      const counts = { "events.1": 0, "events.2": 0, "events.3": 0, "events.4": 0, "events.5": 0, "events.spam": 0, incidents: 0 };
+      board.messages.forEach((message) => { counts[message.queue_name] = (counts[message.queue_name] || 0) + 1; });
+      const lanes = document.querySelector("#lanes");
+      lanes.replaceChildren();
+      ["1", "2", "3", "4", "5", "spam"].forEach((name) => {
+        const key = name === "spam" ? "events.spam" : `events.${name}`;
+        const lane = el("div", null, name === "spam" ? "lane spam" : "lane");
+        lane.append(el("span", name === "spam" ? "Spam" : `Priority ${name}`), el("b", String(counts[key] || 0)));
+        lanes.append(lane);
+      });
+      const list = document.querySelector("#messages");
+      list.replaceChildren();
+      board.messages.forEach((message) => {
+        const button = el("button", null, "msg");
+        button.append(
+          el("span", message.queue_name),
+          el("span", message.description),
+          el("small", message.status, message.status === "sent" ? "sent" : message.status === "not_processed" ? "stamp" : ""),
+        );
+        button.onclick = () => { selected = message.id; drawTrace(board.messages); };
+        list.append(button);
+      });
+      if (!selected && board.messages[0]) selected = board.messages[0].id;
+      drawTrace(board.messages);
+      const people = document.querySelector("#spammers");
+      people.replaceChildren();
+      if (!board.spammers.length) people.append(el("p", "Nobody is blocked."));
+      board.spammers.forEach((person) => {
+        people.append(el("p", `${person.username || "user"}  ${person.uuid}`));
+      });
+    }
+
+    function drawTrace(messages) {
+      const host = document.querySelector("#trace");
+      const message = messages.find((item) => item.id === selected);
+      host.replaceChildren();
+      if (!message) return;
+      host.append(el("p", `${message.username || "user"} · ${message.id}`));
+      (message.trace || []).forEach((step) => {
+        const block = el("div", null, "step");
+        block.append(el("strong", step.thought || ""));
+        if (step.action) block.append(el("p", `${step.action} → ${step.observation || ""}`));
+        host.append(block);
+      });
+    }
+
+    async function refresh() {
+      const response = await fetch("/board");
+      if (response.ok) render(await response.json());
+    }
+    refresh();
+    setInterval(refresh, 2000);
+  </script>
+</body>
+</html>

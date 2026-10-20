@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "event-desk"
+version = "0.1.0"
+description = "Async event desk with a ReAct loop, RabbitMQ, and ServiceNow."
+requires-python = ">=3.11"
+dependencies = [
+  "quart==0.20.0",
+  "aio-pika==9.5.4",
+  "aiomysql==0.2.0",
+  "httpx==0.28.1",
+]
+
+[project.optional-dependencies]
+test = ["pytest==8.3.3", "pytest-asyncio==0.24.0"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+
+[tool.setuptools]
+py-modules = [
+  "api",
+  "delivery",
+  "agents",
+  "rabbitmq",
+  "servicenow",
+  "mail",
+  "store",
+  "decorators",
+  "logging_setup",
+  "wso2",
+]

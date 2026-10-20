@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sequence name="user-uuid" trace="disable" xmlns="http://ws.apache.org/ns/synapse">
+  <script language="js"><![CDATA[
+    var username = mc.getProperty("END_USER_NAME");
+    if (!username || String(username) === "null" || String(username) === "None") {
+      username = mc.getProperty("api.ut.userName");
+    }
+    username = String(username);
+    var namespace = "6ba7b8119dad11d180b400c04fd430c8";
+    function javaType(name) {
+      try {
+        return Java.type(name);
+      } catch (error) {
+        return null;
+      }
+    }
+    var MessageDigest = javaType("java.security.MessageDigest");
+    if (!MessageDigest) {
+      MessageDigest = Packages.java.security.MessageDigest;
+    }
+    var IntegerClass = javaType("java.lang.Integer");
+    if (!IntegerClass) {
+      IntegerClass = Packages.java.lang.Integer;
+    }
+    var StringClass = javaType("java.lang.String");
+    if (!StringClass) {
+      StringClass = Packages.java.lang.String;
+    }
+    function hexToBytes(hex) {
+      var bytes = Packages.java.lang.reflect.Array.newInstance(Packages.java.lang.Byte.TYPE, 16);
+      for (var i = 0; i < 16; i++) {
+        var value = IntegerClass.parseInt(hex.substring(i * 2, i * 2 + 2), 16);
+        if (value > 127) {
+          value = value - 256;
+        }
+        bytes[i] = value;
+      }
+      return bytes;
+    }
+    var digest = MessageDigest.getInstance("SHA-1");
+    digest.update(hexToBytes(namespace));
+    digest.update(new StringClass(username).getBytes("UTF-8"));
+    var hash = digest.digest();
+    hash[6] = (hash[6] & 0x0f) | 0x50;
+    hash[8] = (hash[8] & 0x3f) | 0x80;
+    function byteHex(index) {
+      var value = hash[index];
+      if (value < 0) {
+        value = value + 256;
+      }
+      var text = IntegerClass.toHexString(value);
+      return String(text).length == 1 ? "0" + text : String(text);
+    }
+    var userUuid = byteHex(0) + byteHex(1) + byteHex(2) + byteHex(3) + "-"
+      + byteHex(4) + byteHex(5) + "-" + byteHex(6) + byteHex(7) + "-"
+      + byteHex(8) + byteHex(9) + "-" + byteHex(10) + byteHex(11) + byteHex(12)
+      + byteHex(13) + byteHex(14) + byteHex(15);
+    mc.setProperty("username", username);
+    mc.setProperty("user_uuid", userUuid);
+  ]]></script>
+  <header name="X-User-Name" scope="transport" expression="get-property('username')"/>
+  <header name="X-User-Uuid" scope="transport" expression="get-property('user_uuid')"/>
+</sequence>

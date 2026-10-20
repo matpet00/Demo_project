@@ -1,0 +1,21 @@
+{
+  "title": "Desk logs",
+  "uid": "desk-logs",
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "panels": [
+    {
+      "type": "logs",
+      "title": "Processing",
+      "gridPos": {"h": 18, "w": 24, "x": 0, "y": 0},
+      "datasource": {"type": "loki", "uid": "loki"},
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "{service=~\"ingest|delivery\"}"
+        }
+      ],
+      "options": {"showTime": true, "showLabels": true, "wrapLogMessage": true}
+    }
+  ]
+}
