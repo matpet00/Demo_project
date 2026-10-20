@@ -46,8 +46,8 @@ async def test_snow_failure_lands_in_failed_snow_delivery():
 
 def test_queue_selection():
     assert queues_from_env("1") == ["priority1_queue"]
-    assert queues_from_env("1,spam,incidents") == ["priority1_queue", "events.spam", "incidents"]
-    assert len(queues_from_env("all")) == 7
+    assert queues_from_env("1,spam") == ["priority1_queue", "events.spam"]
+    assert len(queues_from_env("all")) == 6
 
 
 def test_user_uuid_is_stable_and_distinct():
@@ -56,18 +56,16 @@ def test_user_uuid_is_stable_and_distinct():
     assert user_uuid("alice") != user_uuid("bob")
 
 
-def test_policy_is_attached_only_to_the_data_routes():
+def test_policy_is_attached_only_to_events():
     api = {
         "operations": [
             {"verb": "POST", "target": "/events"},
-            {"verb": "POST", "target": "/incidents"},
             {"verb": "POST", "target": "/add_spammer"},
         ]
     }
     updated = with_user_policy(api)
     assert updated["operations"][0]["operationPolicies"]["request"][0]["policyName"] == "userUuid"
-    assert updated["operations"][1]["authType"] == "Application & Application User"
-    assert "operationPolicies" not in updated["operations"][2]
+    assert "operationPolicies" not in updated["operations"][1]
 
 
 def test_json_log_drops_secrets():

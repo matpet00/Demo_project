@@ -52,7 +52,7 @@ def _verb(operation):
 
 def with_user_policy(api_body):
     for operation in api_body.get("operations", []):
-        if _verb(operation) == "POST" and _target(operation) in {"/events", "/incidents"}:
+        if _verb(operation) == "POST" and _target(operation) == "/events":
             operation["authType"] = "Application & Application User"
             policies = operation.setdefault(
                 "operationPolicies",

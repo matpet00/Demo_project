@@ -24,16 +24,6 @@ def build_event_record(message):
     }
 
 
-def build_incident_record(message):
-    text = message["description"]
-    return {
-        "short_description": text[:160],
-        "description": f"{text}\ncorrelation_id={message['correlation_id']}",
-        "urgency": "2",
-        "impact": "2",
-    }
-
-
 def _number(payload):
     if not isinstance(payload, dict):
         return None
@@ -50,19 +40,12 @@ def _number(payload):
 class MockServiceNow:
     def __init__(self):
         self.events = []
-        self.incidents = []
         self._events = 10000
-        self._incidents = 10000
 
     async def push_event(self, message):
         self._events += 1
         self.events.append(build_event_record(message))
         return f"EM{self._events:07d}"
-
-    async def push_incident(self, message):
-        self._incidents += 1
-        self.incidents.append(build_incident_record(message))
-        return f"INC{self._incidents:07d}"
 
 
 class LiveServiceNow:
@@ -79,11 +62,6 @@ class LiveServiceNow:
             response = await self._post("/api/now/table/em_event", record)
         if response.status_code in {400, 404, 501}:
             response = await self._post("/api/now/desk_events/event", {"records": [record]})
-        response.raise_for_status()
-        return _number(response.json()) or "accepted"
-
-    async def push_incident(self, message):
-        response = await self._post("/api/now/table/incident", build_incident_record(message))
         response.raise_for_status()
         return _number(response.json()) or "accepted"
 

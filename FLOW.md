@@ -7,13 +7,13 @@
 - **Agent (AI)** reads the event description and assigns priority 1 to 5. It works in a Thought, Action, Observation loop. The model is OpenRouter `poolside/laguna-xs-2.1:free`. When the model is unavailable, a scripted agent completes the same steps.
 - **RabbitMQ** carries messages between intake and delivery. The services talk to it through `aio-pika`.
 - **MySQL** stores messages and the list of blocked users.
-- **ServiceNow** receives an event into the `u_itil_event` table through a scripted API. The incident table is available. The incident behaviour itself is not built yet.
+- **ServiceNow** receives an event into the `u_itil_event` table through a scripted API.
 - **SMTP mail** receives a notice when a blocked user's event is left unprocessed. In the demo, Mailpit catches that mail.
 - **Grafana, Loki, and Alloy** collect logs from both services. The dashboard filters by user, correlation id, and queue.
 
 A given user comes in through the gateway. The gateway authenticates that user and adds the name and UUID to the call. The intake service decides what happens from that UUID and from the text. The delivery service finishes the decision: it writes an event to ServiceNow, or it sends mail that the event was not processed.
 
-The gateway computes the UUID as version 5 of the username. The user does not send it and cannot override it. The same UUID is used for an event and for an incident.
+The gateway computes the UUID as version 5 of the username. The user does not send it and cannot override it.
 
 ```mermaid
 flowchart LR
@@ -36,11 +36,10 @@ The exchange is named `events` and it is direct. The routing key is the queue na
 | --- | --- | --- | --- |
 | `priority1_queue` to `priority5_queue` | intake service, from the agent (AI) priority | delivery service | The event is written to ServiceNow. |
 | `events.spam` | intake service, when the given user is blocked | delivery service | Mail `Spammer detected`. ServiceNow is not called. |
-| `incidents` | intake service | delivery service | A plain row in the incident table. The incident behaviour is not built yet. |
 | `failed_snow_delivery` | delivery service after the third failed ServiceNow call | nobody | The message stays on the queue, and the store keeps the same status. |
 | `events.dlq` | delivery service after the third failed mail attempt | nobody | The message stays on the queue. |
 
-The screenshot shows all nine queues. Priority queues, `events.spam`, and `incidents` have a delivery-service consumer. `failed_snow_delivery` and `events.dlq` have none. One message sits in `failed_snow_delivery` from a call ServiceNow did not accept.
+The screenshot shows the queues. Priority queues and `events.spam` have a delivery-service consumer. `failed_snow_delivery` and `events.dlq` have none. One message sits in `failed_snow_delivery` from a call ServiceNow did not accept.
 
 ![Queues in RabbitMQ](docs/images/rabbitmq.png)
 
@@ -130,7 +129,7 @@ A user is added to the list with `POST /add_spammer` and that user's UUID. `POST
 
 ## Use case: ServiceNow does not return success
 
-The delivery service sends the event and ServiceNow returns a status other than success, or the connection fails. That event is not created as an incident.
+The delivery service sends the event and ServiceNow returns a status other than success, or the connection fails. The event stays an event.
 
 ```mermaid
 flowchart TD
@@ -146,18 +145,13 @@ A network failure is repeated three times inside one call, with a short pause. A
 
 When mail for a blocked user fails, the same three attempts apply. After that the message lands on `events.dlq`, and its status is not set to `failed_snow_delivery`.
 
-## Use case: the user sends an incident
-
-`POST /incidents` exists and accepts the same body and the same UUID as an event. The incident behaviour is not built yet. The agent (AI) does not run, no priority is computed, and nothing is written to `u_itil_event`. The message only goes to the `incidents` queue. When the delivery service picks it up, it posts a plain row to the `incident` table: a short description of at most 160 characters, the description, urgency 2, and impact 2.
-
 ## Routes and payloads
 
-The gateway protects `POST /events` and `POST /incidents` and adds the name and UUID there. The other intake routes sit outside that user token. The gateway prefixes the path with the API context and version, in this definition `/desk/v1`.
+The gateway protects `POST /events` and adds the name and UUID there. The other intake routes sit outside that user token. The gateway prefixes the path with the API context and version, in this definition `/desk/v1`.
 
 | Method and path | Service | Behaviour |
 | --- | --- | --- |
 | `POST /events` | gateway, then intake service | The event use case, or the blocked-user use case. |
-| `POST /incidents` | gateway, then intake service | The same body. The incident behaviour is not built yet. |
 | `POST /add_spammer` | intake service | Stores the given user's UUID on the block list. |
 | `POST /remove_spammer` | intake service | Removes the UUID from the list. |
 | `GET /list_spammers` | intake service | Returns the list. |
@@ -200,7 +194,7 @@ The 202 response is the stored message. The same shape sits in the store, on the
 }
 ```
 
-`status` then becomes `sent`, `not_processed`, or `failed_snow_delivery`. `trace` is filled for an event that went through the agent. It stays empty for a blocked user and for an incident. For an incident, `kind` is `incident`, `priority` stays empty, and `queue_name` is `incidents`.
+`status` then becomes `sent`, `not_processed`, or `failed_snow_delivery`. `trace` is filled for an event that went through the agent. It stays empty for a blocked user.
 
 Adding a user to the block list:
 
@@ -229,7 +223,7 @@ flowchart TD
 
 In ServiceNow it creates the table `u_itil_event` with columns source, node, type, resource, metric_name, event_class, severity, description, additional_info, message_key, time_of_event, state, and event_number. Custom columns get the prefix `u_`. The scripted API `POST /api/now/desk_events/event` inserts a row, sets the state to Ready, sets the time to now, and sets the number to `EM` plus a timestamp. When the table and API already exist, preparation checks them and refreshes the script.
 
-On the gateway it creates the demo users, uploads the policy that adds the name and UUID on an event and an incident, publishes the API, and subscribes an application on the Gold tier.
+On the gateway it creates the demo users, uploads the policy that adds the name and UUID on an event, publishes the API, and subscribes an application on the Gold tier.
 
 ## Logs
 

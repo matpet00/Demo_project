@@ -47,7 +47,6 @@ async def test_spam_sends_mail_and_skips_servicenow():
     result = await handle_message(message, snow, mailer, store)
     assert result == "not_processed"
     assert snow.events == []
-    assert snow.incidents == []
     assert "Spammer detected" in mailer.sent[0]["subject"]
     assert "Event was not processed." in mailer.sent[0]["body"]
     assert "bob-uuid" in mailer.sent[0]["body"]
@@ -74,12 +73,3 @@ async def test_event_is_not_turned_into_an_incident_when_event_api_fails():
     assert number == "EM10001"
     assert "/api/now/table/incident" not in seen
     await client.aclose()
-
-
-async def test_incident_uses_the_incident_api():
-    store = MemoryStore()
-    snow = MockServiceNow()
-    message = _message("inc-1", "incidents", kind="incident", priority=None)
-    await store.save_message(message)
-    assert await handle_message(message, snow, RecordingMailer(), store) == "INC0010001"
-    assert snow.events == []

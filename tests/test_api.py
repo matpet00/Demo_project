@@ -78,20 +78,6 @@ async def test_spammer_skips_the_agent(store, broker):
     assert calls["n"] == 0
 
 
-async def test_incident_skips_the_agent(store, broker):
-    calls = {"n": 0}
-
-    def factory():
-        calls["n"] += 1
-        return ScriptedBrain()
-
-    app = create_app(store, broker, brain_factory=factory)
-    response = await _post(app, "/incidents", "database is down", "alice-id")
-    body = await response.get_json()
-    assert body["queue_name"] == "incidents"
-    assert calls["n"] == 0
-
-
 async def test_missing_uuid_is_rejected(app):
     async with app.test_client() as client:
         response = await client.post("/events", json={"description": "outage"})

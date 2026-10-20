@@ -5,14 +5,13 @@ EXCHANGE = "events"
 DLQ = "events.dlq"
 FAILED_SNOW = "failed_snow_delivery"
 SPAM = "events.spam"
-INCIDENTS = "incidents"
 
 
 def priority_queue(priority):
     return f"priority{priority}_queue"
 
 
-WORK_QUEUES = [priority_queue(priority) for priority in range(1, 6)] + [SPAM, INCIDENTS]
+WORK_QUEUES = [priority_queue(priority) for priority in range(1, 6)] + [SPAM]
 MAX_ATTEMPTS = 3
 
 
@@ -27,8 +26,6 @@ def queues_from_env(value=None):
             names.append(priority_queue(part))
         elif part == "spam":
             names.append(SPAM)
-        elif part == "incidents":
-            names.append(INCIDENTS)
         elif part in WORK_QUEUES:
             names.append(part)
         else:

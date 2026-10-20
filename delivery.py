@@ -75,10 +75,7 @@ async def handle_message(message, snow, mailer, store):
             await store.update_message(message["id"], status="not_processed")
             log_message("not_processed", message)
             return "not_processed"
-        if message.get("kind") == "incident":
-            number = await snow.push_incident(message)
-        else:
-            number = await snow.push_event(message)
+        number = await snow.push_event(message)
         await store.update_message(message["id"], status="sent", servicenow_number=number)
         log_message("sent", message, servicenow_number=number)
         return number

@@ -7,7 +7,7 @@ from quart import Quart, abort, jsonify, render_template, request
 from agents import make_brain, run_react
 from decorators import correlation_id, require_api_key
 from logging_setup import configure_logging, log_event, log_message
-from rabbitmq import INCIDENTS, SPAM, connect_broker, priority_queue
+from rabbitmq import SPAM, connect_broker, priority_queue
 from store import connect_from_env
 
 
@@ -68,10 +68,6 @@ def create_app(store=None, broker=None, brain_factory=None):
     @app.post("/events")
     async def events():
         return await _ingest(app, "event")
-
-    @app.post("/incidents")
-    async def incidents():
-        return await _ingest(app, "incident")
 
     @app.post("/add_spammer")
     @require_api_key
@@ -173,8 +169,6 @@ async def accept_message(
     if await store.is_spammer(user_uuid):
         message["queue_name"] = SPAM
         log_message("spammer", message)
-    elif kind == "incident":
-        message["queue_name"] = INCIDENTS
     else:
         result = await run_react(description, brain_factory())
         for step in result["trace"]:

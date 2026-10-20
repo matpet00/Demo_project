@@ -2,27 +2,12 @@ openapi: 3.0.3
 info:
   title: Desk
   version: v1
-  description: Event and incident ingest. The caller identity is the UUID added by the WSO2 mediation.
+  description: Event ingest. The caller identity is the UUID added by the WSO2 mediation.
 paths:
   /events:
     post:
       operationId: postEvent
       summary: Accept an event and let the ReAct loop choose priority 1-5.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/Payload"
-      responses:
-        "202":
-          description: Queued
-        "401":
-          description: Missing X-User-Uuid
-  /incidents:
-    post:
-      operationId: postIncident
-      summary: Accept an incident for the same user UUID.
       requestBody:
         required: true
         content:

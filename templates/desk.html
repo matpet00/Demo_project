@@ -89,8 +89,7 @@
           <button type="button" class="chip" data-text="nightly report finished, informational notice">Info</button>
         </div>
         <div class="row">
-          <button class="primary" type="submit" data-kind="event">Send event</button>
-          <button type="submit" data-kind="incident">Send incident</button>
+          <button class="primary" type="submit">Send event</button>
         </div>
         <label for="api-key">API key for the block list</label>
         <input id="api-key" value="">
@@ -126,8 +125,7 @@
 
     document.querySelector("#composer").onsubmit = async (event) => {
       event.preventDefault();
-      const kind = event.submitter?.dataset.kind || "event";
-      const response = await fetch(kind === "incident" ? "/incidents" : "/events", {
+      const response = await fetch("/events", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -164,7 +162,7 @@
     }
 
     function render(board) {
-      const counts = { priority1_queue: 0, priority2_queue: 0, priority3_queue: 0, priority4_queue: 0, priority5_queue: 0, "events.spam": 0, incidents: 0 };
+      const counts = { priority1_queue: 0, priority2_queue: 0, priority3_queue: 0, priority4_queue: 0, priority5_queue: 0, "events.spam": 0 };
       board.messages.forEach((message) => { counts[message.queue_name] = (counts[message.queue_name] || 0) + 1; });
       const lanes = document.querySelector("#lanes");
       lanes.replaceChildren();
