@@ -1,6 +1,6 @@
 # How the application behaves
 
-**Interactive tour:** [docs/flow.html](docs/flow.html) (or http://localhost:8080/flow when ingest is up) — click through each step with bullet captions.
+**Interactive tour:** [https://matpet00.github.io/Demo_project/flow.html](https://matpet00.github.io/Demo_project/flow.html) (or http://localhost:8080/flow when ingest is up).
 
 ![Animated preview](docs/images/flow.gif)
 

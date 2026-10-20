@@ -33,7 +33,7 @@
     }
     body.capture {
       width: 1280px;
-      height: 720px;
+      height: 820px;
       overflow: hidden;
     }
     .wrap {
@@ -238,11 +238,14 @@
     }
     .footer strong { color: var(--ink); }
     body.capture .controls,
-    body.capture .nav-top,
     body.capture .hint,
-    body.capture .layout aside { display: none; }
-    body.capture .layout { grid-template-columns: 1fr; }
-    body.capture .wrap { padding-bottom: 0; }
+    body.capture .steps { display: none; }
+    body.capture .layout {
+      grid-template-columns: 1fr;
+    }
+    body.capture .wrap { padding-bottom: 0; width: 1280px; }
+    body.capture .stage-panel ul { font-size: 13px; }
+    body.capture svg.pipeline { max-height: 340px; }
   </style>
 </head>
 <body>
@@ -295,6 +298,10 @@
     if (CAPTURE) document.body.classList.add("capture");
     if (location.protocol === "file:") {
       document.getElementById("boardLink").href = "../templates/desk.html";
+    }
+    if (location.hostname.endsWith("github.io")) {
+      document.getElementById("boardLink").textContent = "GitHub repo";
+      document.getElementById("boardLink").href = "https://github.com/matpet00/Demo_project";
     }
 
     const STAGES = [
@@ -475,7 +482,11 @@
     }
 
     function renderPacketAtProgress(progress) {
-      const idx = Math.round(progress * (STAGES.length - 1));
+      progress = Math.min(1, Math.max(0, progress));
+      const idx = Math.min(
+        STAGES.length - 1,
+        Math.max(0, Math.round(progress * (STAGES.length - 1))),
+      );
       const stage = STAGES[idx];
       const point = path.getPointAtLength(progress * totalLength);
       const lines = packetLines(stage.id);
@@ -588,9 +599,9 @@
       if (e.key === "End") setStep(STAGES.length - 1);
     });
 
-    /* GIF capture mode (scripts/render_flow_gif.py) */
-    const travelFrames = 12;
-    const holdFrames = 11;
+    /* GIF capture mode (scripts/render_flow_gif.py) — slower holds for readable text */
+    const travelFrames = CAPTURE ? 18 : 12;
+    const holdFrames = CAPTURE ? 38 : 11;
     const segmentFrames = travelFrames + holdFrames;
     window.totalFlowFrames = (STAGES.length - 1) * segmentFrames + holdFrames;
 
@@ -599,8 +610,9 @@
       if (frame >= totalFrames - 1) return 1;
       const seg = Math.floor(frame / segmentFrames);
       const local = frame % segmentFrames;
-      const segStart = seg / (STAGES.length - 1);
-      const segEnd = (seg + 1) / (STAGES.length - 1);
+      const last = STAGES.length - 1;
+      const segStart = Math.min(1, seg / last);
+      const segEnd = Math.min(1, (seg + 1) / last);
       if (local < travelFrames) {
         const t = local / travelFrames;
         const eased = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;

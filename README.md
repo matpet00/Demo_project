@@ -4,17 +4,18 @@
 
 ## Overview
 
-**Interactive flow tour** — click each step with bullet captions (nodes, ← →, or **Play tour**):
+[![Click through the stack — WSO2, ReAct agent, RabbitMQ, ServiceNow](docs/images/flow-poster.png)](https://matpet00.github.io/Demo_project/flow.html)
 
-| How to open | URL |
-| --- | --- |
-| Stack running | **http://localhost:8080/flow** |
-| Local clone | open [`docs/flow.html`](docs/flow.html) in a browser (File → Open) |
-| GitHub browse | clone the repo; the file view on GitHub is not interactive |
+**[▶ Open interactive flow tour](https://matpet00.github.io/Demo_project/flow.html)** — click each step (nodes or ← →), read the captions, press **Play tour**. Same app when the stack runs: http://localhost:8080/flow
+
+<details>
+<summary>Short animated preview (GIF)</summary>
 
 ![Animated preview](docs/images/flow.gif)
 
-*GIF preview (~10 s). Regenerate: `python3 scripts/render_flow_gif.py`. UI montage: [overview.gif](docs/images/overview.gif).*
+</details>
+
+UI montage: [overview.gif](docs/images/overview.gif) · Regenerate assets: `python3 scripts/render_flow_gif.py`
 
 If you hire integrators who only know “POST to ServiceNow and parse the response,” you get fragile scripts. This repo shows the other pattern: **ITIL Event Management** with a real gateway, async workers, and queues — so spikes, retries, and bad senders do not become ticket chaos or lost messages.
 
