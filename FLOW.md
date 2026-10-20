@@ -1,237 +1,240 @@
-# Jak se aplikace chová
+# How the application behaves
 
-## Použité technologie
+## Technologies
 
-- **WSO2 API Manager 4.5.0** je brána. Ověří uživatele a k volání doplní jeho jméno a UUID.
-- **Python 3.11 a Quart** jsou přijímací a doručovací služba. Obě běží asynchronně.
-- **Agent (AI)** čte popis eventu a určí prioritu 1 až 5. Pracuje ve smyčce Thought, Action, Observation. Model je OpenRouter `poolside/laguna-xs-2.1:free`. Když model není dostupný, stejné kroky dokončí skriptovaný agent.
-- **RabbitMQ** nese zprávy mezi přijetím a doručením. Služby s ním mluví přes `aio-pika`.
-- **MySQL** drží zprávy a seznam blokovaných uživatelů.
-- **ServiceNow** přijme event do tabulky `u_itil_event` přes scripted API. Incidentová tabulka je připravená, vlastní logika incidentu zatím není.
-- **SMTP pošta** dostane zprávu, když se event blokovaného uživatele nezpracuje. V ukázce ji chytá Mailpit.
-- **Grafana, Loki a Alloy** sbírají logy obou služeb. Dashboard filtruje podle uživatele, correlation id a fronty.
+- **WSO2 API Manager 4.5.0** is the gateway. It authenticates the user and adds the user's name and UUID to the call.
+- **Python 3.11 and Quart** are the intake service and the delivery service. Both run asynchronously.
+- **Agent (AI)** reads the event description and assigns priority 1 to 5. It works in a Thought, Action, Observation loop. The model is OpenRouter `poolside/laguna-xs-2.1:free`. When the model is unavailable, a scripted agent completes the same steps.
+- **RabbitMQ** carries messages between intake and delivery. The services talk to it through `aio-pika`.
+- **MySQL** stores messages and the list of blocked users.
+- **ServiceNow** receives an event into the `u_itil_event` table through a scripted API. The incident table is available. The incident behaviour itself is not built yet.
+- **SMTP mail** receives a notice when a blocked user's event is left unprocessed. In the demo, Mailpit catches that mail.
+- **Grafana, Loki, and Alloy** collect logs from both services. The dashboard filters by user, correlation id, and queue.
 
-Daný uživatel přijde přes bránu. Brána ho ověří a k volání doplní jeho jméno a UUID. Přijímací služba podle toho UUID a podle textu rozhodne, co se stane. Doručovací služba rozhodnutí dokončí: event zapíše do ServiceNow, nebo pošle poštu, že se event nezpracoval.
+A given user comes in through the gateway. The gateway authenticates that user and adds the name and UUID to the call. The intake service decides what happens from that UUID and from the text. The delivery service finishes the decision: it writes an event to ServiceNow, or it sends mail that the event was not processed.
 
-UUID počítá brána jako verzi 5 ze jména uživatele. Uživatel si ho do volání nedává a nemůže ho přepsat. Stejné UUID platí pro event i pro incident.
+The gateway computes the UUID as version 5 of the username. The user does not send it and cannot override it. The same UUID is used for an event and for an incident.
 
 ```mermaid
 flowchart LR
-    user[Daný uživatel] --> gate[Brána]
-    gate -->|"jméno a UUID"| intake[Přijímací služba]
-    intake --> store[(Úložiště)]
+    user[Given user] --> gate[Gateway]
+    gate -->|"name and UUID"| intake[Intake service]
+    intake --> store[(Store)]
     intake --> agent[Agent AI]
-    agent --> queues[(Fronty)]
+    agent --> queues[(Queues)]
     intake --> queues
-    queues --> delivery[Doručovací služba]
+    queues --> delivery[Delivery service]
     delivery --> snow[ServiceNow]
-    delivery --> mail[Pošta]
+    delivery --> mail[Mail]
 ```
 
-## Fronty v RabbitMQ
+## Queues in RabbitMQ
 
-Exchange se jmenuje `events` a je direct. Routing key je jméno fronty, takže zpráva spadne právě do jedné. Zprávy jsou trvalé. Přijímací služba frontu jen naplní. Doručovací služba ji vyzvedává a najednou má rozdělaných nejvýš deset zpráv.
+The exchange is named `events` and it is direct. The routing key is the queue name, so a message lands in exactly one queue. Messages are durable. The intake service only publishes. The delivery service consumes, with at most ten messages in flight.
 
-| Fronta | Kdo ji plní | Kdo ji bere | Co se stane |
+| Queue | Who fills it | Who reads it | What happens |
 | --- | --- | --- | --- |
-| `priority1_queue` až `priority5_queue` | přijímací služba podle priority od agenta (AI) | doručovací služba | Event se zapíše do ServiceNow. |
-| `events.spam` | přijímací služba, když je daný uživatel blokovaný | doručovací služba | Pošta `Spammer detected`. ServiceNow se nevolá. |
-| `incidents` | přijímací služba | doručovací služba | Obecný řádek v tabulce incident. Vlastní logika incidentu zatím není. |
-| `failed_snow_delivery` | doručovací služba po třetím neúspěchu volání ServiceNow | nikdo | Zpráva zůstane ve frontě i se stavem v úložišti. |
-| `events.dlq` | doručovací služba, když po třech pokusech selže pošta | nikdo | Zpráva zůstane ve frontě. |
+| `priority1_queue` to `priority5_queue` | intake service, from the agent (AI) priority | delivery service | The event is written to ServiceNow. |
+| `events.spam` | intake service, when the given user is blocked | delivery service | Mail `Spammer detected`. ServiceNow is not called. |
+| `incidents` | intake service | delivery service | A plain row in the incident table. The incident behaviour is not built yet. |
+| `failed_snow_delivery` | delivery service after the third failed ServiceNow call | nobody | The message stays on the queue, and the store keeps the same status. |
+| `events.dlq` | delivery service after the third failed mail attempt | nobody | The message stays on the queue. |
 
-Na snímku je všech devět front. U priorit, u `events.spam` a u `incidents` běží spotřebitel doručovací služby. `failed_snow_delivery` a `events.dlq` spotřebitele nemají. V `failed_snow_delivery` leží jedna zpráva, u které ServiceNow nevrátilo úspěch.
+The screenshot shows all nine queues. Priority queues, `events.spam`, and `incidents` have a delivery-service consumer. `failed_snow_delivery` and `events.dlq` have none. One message sits in `failed_snow_delivery` from a call ServiceNow did not accept.
 
-![Fronty v RabbitMQ](docs/images/rabbitmq.png)
+![Queues in RabbitMQ](docs/images/rabbitmq.png)
 
-## Use case: uživatel pošle event
+## Use case: the user sends an event
 
-Uživatel zavolá `POST /events` a v těle pošle jen popis. Prioritu neuvádí.
+The user calls `POST /events` and sends only a description. The body has no priority.
 
-Přijímací služba ověří, že UUID je v hlavičce a že popis není prázdný. Když UUID není na seznamu blokovaných, spustí agenta (AI). Agent si přečte popis, zavolá dva nástroje a vrátí prioritu 1 až 5. 1 je nejzávažnější. Zpráva jde do fronty `priority1_queue` až `priority5_queue` a uživatel dostane odpověď 202.
+The intake service checks that the UUID header is present and that the description is not empty. When the UUID is not on the block list, it starts the agent (AI). The agent reads the description, calls two tools, and returns priority 1 to 5. 1 is the most severe. The message goes to `priority1_queue` through `priority5_queue`, and the user receives 202.
 
-Doručovací služba zprávu vyzvedne a založí event v ServiceNow. Úspěch zapíše ke zprávě jako stav `sent` a číslo eventu. Stejný popis poslaný desetkrát je deset samostatných eventů a deset zápisů do ServiceNow. Když už je UUID blokované, agent neběží, zpráva jde do `events.spam` a doručovací služba jen pošle poštu. Stav je `not_processed`.
+The delivery service picks the message up and creates an event in ServiceNow. Success is stored on the message as status `sent` and the event number. The same description sent ten times is ten separate events and ten writes to ServiceNow. When the UUID is already blocked, the agent does not run, the message goes to `events.spam`, and the delivery service only sends mail. The status is `not_processed`.
 
 ```mermaid
 flowchart TD
-    call["POST /events s popisem"] --> known{"UUID je blokované?"}
-    known -->|ne| react["Agent AI přečte popis"]
-    react --> prio["Priorita 1 až 5"]
-    prio --> queue["Fronta priorityN_queue"]
-    queue --> snow["Event v ServiceNow"]
-    snow --> sent["Stav sent a číslo eventu"]
-    known -->|ano| spam["Fronta events.spam, agent neběží"]
-    spam --> mail["Pošta: Spammer detected. Event was not processed."]
-    mail --> stopped["Stav not_processed, ServiceNow se nevolá"]
+    call["POST /events with a description"] --> known{"Is the UUID blocked?"}
+    known -->|no| react["Agent AI reads the description"]
+    react --> prio["Priority 1 to 5"]
+    prio --> queue["Queue priorityN_queue"]
+    queue --> snow["Event in ServiceNow"]
+    snow --> sent["Status sent and the event number"]
+    known -->|yes| spam["Queue events.spam, the agent does not run"]
+    spam --> mail["Mail: Spammer detected. Event was not processed."]
+    mail --> stopped["Status not_processed, ServiceNow is not called"]
 ```
 
-Agent (AI) postupuje ve smyčce Thought, Action, Observation a má nejvýš šest kroků.
+The agent (AI) proceeds in a Thought, Action, Observation loop and stops after six steps.
 
-1. `lookup_service` najde v popisu službu: checkout, payment, database, proxy nebo latency. Když nic nesedí, služba je `unknown`.
-2. `classify_priority` navrhne prioritu podle slov v popisu.
-3. Agent prioritu potvrdí a přijímací služba podle ní vybere frontu.
+1. `lookup_service` finds the service named in the description: checkout, payment, database, proxy, or latency. When nothing matches, the service is `unknown`.
+2. `classify_priority` suggests a priority from the words in the description.
+3. The agent confirms the priority and the intake service selects the queue.
 
-| Priorita | Slova v popisu |
+| Priority | Words in the description |
 | --- | --- |
 | 1 | outage, down, unavailable, critical, výpadek |
 | 2 | slow, latency, degraded |
-| 3 | error, fail, exception, timeout, nebo žádný silný signál |
+| 3 | error, fail, exception, timeout, or no strong signal |
 | 4 | warn, warning, disk |
 | 5 | info, notice, recovered, ok |
 
-Když je nastavený klíč, agent volá model. Když klíč chybí nebo model selže, stejné dva kroky dokončí skriptovaný agent a do stopy se zapíše, že se použil. Priorita mimo 1 až 5 se uloží jako 3. Když agent prioritu do šesti kroků neřekne, priorita je také 3. Stopa Thought / Action / Observation zůstane u zprávy.
+When a key is configured, the agent calls the model. When the key is missing or the model fails, a scripted agent completes the same two steps and the trace records that it was used. A priority outside 1 to 5 is stored as 3. When the agent does not name a priority within six steps, the priority is also 3. The Thought / Action / Observation trace stays on the message.
 
-V přehledu jsou fronty ve sloupcích. Řádek se stavem `sent` je event, který došel do ServiceNow.
+The overview shows the queues in columns. A row with status `sent` is an event that reached ServiceNow.
 
-![Přehled po zpracování eventů](docs/images/desk.png)
+![Overview after events were processed](docs/images/desk.png)
 
-Do ServiceNow jde záznam s těmito poli. `severity` je priorita od agenta. `message_key` je id zprávy, takže opakovaný popis nezaloží jeden společný event. Číslo eventu, stav Ready a čas doplní ServiceNow.
+ServiceNow receives a record with these fields. `severity` is the priority from the agent. `message_key` is the message id, so a repeated description does not collapse into one event. ServiceNow fills in the event number, the state Ready, and the time.
 
 ```json
 {
   "source": "desk",
-  "node": "<jméno uživatele>",
+  "node": "<username>",
   "type": "event",
   "resource": "desk",
   "severity": "1",
-  "description": "<popis z volání>",
-  "message_key": "<id zprávy>",
-  "additional_info": "{\"correlation_id\":\"<id>\",\"user_uuid\":\"<uuid uživatele>\"}"
+  "description": "<description from the call>",
+  "message_key": "<message id>",
+  "additional_info": {
+    "correlation_id": "<id>",
+    "user_uuid": "<user uuid>"
+  }
 }
 ```
 
-Doručovací služba zkouší eventové API v tomto pořadí. Odpověď 400, 404 nebo 501 znamená, že ta cesta na instanci není, a zkusí se další.
+The delivery service tries the event APIs in this order. A response of 400, 404, or 501 means that path does not exist on the instance, and the next path is tried.
 
 1. `POST /api/global/em/jsonv2`
 2. `POST /api/now/table/em_event`
 3. `POST /api/now/desk_events/event`
 
-Na instanci bez Event Managementu projde třetí volání a řádek skončí v tabulce `u_itil_event`. Úspěch je odpověď 2xx. Z těla se vezme číslo eventu.
+On an instance without Event Management, the third call succeeds and the row lands in `u_itil_event`. Success is a 2xx response. The event number is taken from the body.
 
-## Use case: uživatel je blokovaný
+## Use case: the user is blocked
 
-Stejný uživatel zavolá `POST /events` se stejným tvarem těla. Jeho UUID je na seznamu blokovaných.
+The same user calls `POST /events` with the same body. That user's UUID is on the block list.
 
-Přijímací služba agenta nespustí a prioritu nepočítá. Zpráva jde do fronty `events.spam`. Doručovací služba ServiceNow nezavolá. Pošle poštu s předmětem `Spammer detected` a textem, že event nebyl zpracován, spolu se jménem, UUID a id eventu. Stav zprávy je `not_processed`.
-
-```mermaid
-flowchart TD
-    call["POST /events od blokovaného uživatele"] --> queue["Fronta events.spam"]
-    queue --> mail["Pošta: Spammer detected. Event was not processed."]
-    mail --> status["Stav not_processed"]
-```
-
-![Pošta pro blokovaného uživatele](docs/images/mail.png)
-
-Na seznam se uživatel dostane voláním `POST /add_spammer` s jeho UUID. `POST /remove_spammer` ho odebere, `GET /list_spammers` seznam vrátí. Tyto tři cesty chtějí `X-API-Key`, když je klíč nastavený. UUID v těle je uživatel, který se má zablokovat.
-
-## Use case: ServiceNow nevrátí úspěch
-
-Doručovací služba event odešle a ServiceNow vrátí jiný kód než úspěch, nebo spojení spadne. Event se kvůli tomu nezaloží jako incident.
+The intake service does not start the agent and does not compute a priority. The message goes to `events.spam`. The delivery service does not call ServiceNow. It sends mail with the subject `Spammer detected` and a body saying the event was not processed, plus the username, UUID, and event id. The message status is `not_processed`.
 
 ```mermaid
 flowchart TD
-    call[Volání ServiceNow] --> ok{"Odpověď 2xx?"}
-    ok -->|ano| sent["Stav sent a číslo eventu"]
-    ok -->|"400, 404 nebo 501 na prvních dvou eventových cestách"| next[Další eventová cesta]
-    ok -->|"401, 403, 500, timeout nebo pád spojení"| again{"Pokus je třetí?"}
-    again -->|ne| retry["Zpráva se vrátí do stejné fronty"]
-    again -->|ano| parked["Fronta failed_snow_delivery a stejný stav v úložišti"]
+    call["POST /events from a blocked user"] --> queue["Queue events.spam"]
+    queue --> mail["Mail: Spammer detected. Event was not processed."]
+    mail --> status["Status not_processed"]
 ```
 
-Síťový výpadek se uvnitř jednoho volání zopakuje třikrát, s krátkou pauzou. Hotová chybová odpověď, například 401, 403 nebo 500, se na té vrstvě neopakuje a jde rovnou do fronty. Doručovací služba pak zprávu vrátí do stejné fronty. Po třetím neúspěchu ji přesune do `failed_snow_delivery` a v úložišti nastaví stejný stav. Tu frontu nikdo dál nezpracovává, zpráva tam zůstane i s typem chyby.
+![Mail for a blocked user](docs/images/mail.png)
 
-Když selže pošta u blokovaného uživatele, platí stejné tři pokusy. Po nich zpráva skončí ve frontě `events.dlq` a stav `failed_snow_delivery` se u ní nenastaví.
+A user is added to the list with `POST /add_spammer` and that user's UUID. `POST /remove_spammer` removes the UUID. `GET /list_spammers` returns the list. These three routes require `X-API-Key` when a key is configured. The UUID in the body is the user to block.
 
-## Use case: uživatel pošle incident
+## Use case: ServiceNow does not return success
 
-`POST /incidents` existuje a přijme stejné tělo i stejné UUID jako event. Vlastní logika incidentu zatím není. Agent (AI) neběží, priorita se nepočítá a do tabulky `u_itil_event` se nic nezapíše. Zpráva jen spadne do fronty `incidents`. Když ji doručovací služba vyzvedne, pošle do tabulky `incident` obecný řádek: krátký popis do 160 znaků, popis, urgency 2 a impact 2.
+The delivery service sends the event and ServiceNow returns a status other than success, or the connection fails. That event is not created as an incident.
 
-## Routy a payloady
+```mermaid
+flowchart TD
+    call[ServiceNow call] --> ok{"Response 2xx?"}
+    ok -->|yes| sent["Status sent and the event number"]
+    ok -->|"400, 404, or 501 on the first two event paths"| next[Next event path]
+    ok -->|"401, 403, 500, timeout, or a dropped connection"| again{"Is this the third attempt?"}
+    again -->|no| retry["The message returns to the same queue"]
+    again -->|yes| parked["Queue failed_snow_delivery and the same status in the store"]
+```
 
-Brána chrání `POST /events` a `POST /incidents` a doplní na ně jméno a UUID. Ostatní cesty přijímací služby stojí mimo ten uživatelský token. Před cestu brána dává context API a verzi, v téhle definici `/desk/v1`.
+A network failure is repeated three times inside one call, with a short pause. A finished error response, such as 401, 403, or 500, is not repeated at that layer and goes straight to the queue handling. The delivery service then puts the message back on the same queue. After the third failure it moves the message to `failed_snow_delivery` and sets the same status in the store. Nothing consumes that queue. The message stays there with the error type.
 
-| Metoda a cesta | Služba | Chování |
+When mail for a blocked user fails, the same three attempts apply. After that the message lands on `events.dlq`, and its status is not set to `failed_snow_delivery`.
+
+## Use case: the user sends an incident
+
+`POST /incidents` exists and accepts the same body and the same UUID as an event. The incident behaviour is not built yet. The agent (AI) does not run, no priority is computed, and nothing is written to `u_itil_event`. The message only goes to the `incidents` queue. When the delivery service picks it up, it posts a plain row to the `incident` table: a short description of at most 160 characters, the description, urgency 2, and impact 2.
+
+## Routes and payloads
+
+The gateway protects `POST /events` and `POST /incidents` and adds the name and UUID there. The other intake routes sit outside that user token. The gateway prefixes the path with the API context and version, in this definition `/desk/v1`.
+
+| Method and path | Service | Behaviour |
 | --- | --- | --- |
-| `POST /events` | brána, pak přijímací služba | Use case eventu nebo blokovaného uživatele. |
-| `POST /incidents` | brána, pak přijímací služba | Stejné tělo. Vlastní logika incidentu zatím není. |
-| `POST /add_spammer` | přijímací služba | Zapíše UUID daného uživatele na seznam blokovaných. |
-| `POST /remove_spammer` | přijímací služba | UUID ze seznamu odebere. |
-| `GET /list_spammers` | přijímací služba | Vrátí seznam. |
-| `GET /` | přijímací služba | Přehled front a stopy agenta. |
-| `GET /board` | přijímací služba | Zprávy a seznam blokovaných. Přehled ho čte průběžně. |
-| `GET /events/<id>` | přijímací služba | Jedna uložená zpráva. Neznámé id je 404. |
-| `GET /healthz` | přijímací i doručovací služba | `{"status":"ok"}`. |
-| `GET /readyz` | přijímací i doručovací služba | `{"status":"ready"}`, nebo 503 když úložiště neodpoví. |
+| `POST /events` | gateway, then intake service | The event use case, or the blocked-user use case. |
+| `POST /incidents` | gateway, then intake service | The same body. The incident behaviour is not built yet. |
+| `POST /add_spammer` | intake service | Stores the given user's UUID on the block list. |
+| `POST /remove_spammer` | intake service | Removes the UUID from the list. |
+| `GET /list_spammers` | intake service | Returns the list. |
+| `GET /` | intake service | Overview of the queues and the agent trace. |
+| `GET /board` | intake service | Messages and the block list. The overview polls it. |
+| `GET /events/<id>` | intake service | One stored message. An unknown id is 404. |
+| `GET /healthz` | intake and delivery | `{"status":"ok"}`. |
+| `GET /readyz` | intake and delivery | `{"status":"ready"}`, or 503 when the store does not answer. |
 
-Doručovací služba z HTTP bere jen kontrolu zdraví. Zprávy bere z front.
+The delivery service accepts only the health checks over HTTP. It takes messages from the queues.
 
-Volání eventu:
+An event call:
 
 ```http
 POST /events
-Authorization: Bearer <token uživatele>
+Authorization: Bearer <user token>
 Content-Type: application/json
 
 {"description":"checkout-api outage, payments are down"}
 ```
 
-Chybějící UUID je 401. Chybějící popis je 400. `short_description` se vezme, když `description` není. Hlavička `X-Correlation-Id` se uloží. Když chybí, služba vytvoří nové id.
+A missing UUID is 401. A missing description is 400. `short_description` is used when `description` is absent. The `X-Correlation-Id` header is stored. When it is absent, the service creates a new id.
 
-Odpověď 202 je uložená zpráva. Stejný tvar leží v úložišti, na frontě a v přehledu:
+The 202 response is the stored message. The same shape sits in the store, on the queue, and in the overview:
 
 ```json
 {
-  "id": "<id zprávy>",
+  "id": "<message id>",
   "kind": "event",
-  "user_uuid": "<uuid uživatele>",
-  "username": "<jméno uživatele>",
-  "description": "<popis>",
+  "user_uuid": "<user uuid>",
+  "username": "<username>",
+  "description": "<description>",
   "priority": 1,
   "queue_name": "priority1_queue",
   "status": "queued",
   "trace": [],
   "correlation_id": "<id>",
   "servicenow_number": null,
-  "created_at": "<čas>"
+  "created_at": "<time>"
 }
 ```
 
-`status` pak přejde na `sent`, `not_processed`, nebo `failed_snow_delivery`. `trace` se naplní u eventu, který prošel agentem. U blokovaného uživatele a u incidentu zůstane prázdná. U incidentu je `kind` rovný `incident`, `priority` zůstane prázdná a `queue_name` je `incidents`.
+`status` then becomes `sent`, `not_processed`, or `failed_snow_delivery`. `trace` is filled for an event that went through the agent. It stays empty for a blocked user and for an incident. For an incident, `kind` is `incident`, `priority` stays empty, and `queue_name` is `incidents`.
 
-Zápis na seznam blokovaných:
+Adding a user to the block list:
 
 ```http
 POST /add_spammer
 Content-Type: application/json
-X-API-Key: <klíč>
+X-API-Key: <key>
 
-{"uuid":"<uuid uživatele>","username":"<jméno uživatele>"}
+{"uuid":"<user uuid>","username":"<username>"}
 ```
 
-Odpověď je 201. Prázdné UUID je 400, špatný klíč 401. `POST /remove_spammer` stačí `uuid` a vrací 200.
+The response is 201. An empty UUID is 400. A wrong key is 401. `POST /remove_spammer` needs only `uuid` and returns 200.
 
-Úspěch scripted API ve ServiceNow je 201 a tělo s číslem eventu. Když číslo v těle není, ke zprávě se uloží `accepted`.
+A successful scripted API call in ServiceNow is 201 and a body with the event number. When the body has no number, the message stores `accepted`.
 
-## Příprava
+## Preparation
 
-`preparation.py` se spustí jednou, před provozem. Přijímací ani doručovací služba ho nevolá. Nachystá to, na čem use casy stojí: tabulku a API ve ServiceNow, uživatele a subscription na bráně, a jedno zvolené UUID na seznamu blokovaných, aby šel ukázat use case blokovaného uživatele. Hesla a klíče čte z `.env` a do logu je nepíše.
+`preparation.py` runs once, before traffic. The intake service and the delivery service do not call it. It creates what the use cases stand on: the ServiceNow table and API, the gateway users and subscription, and one chosen UUID on the block list so the blocked-user use case can be shown. It reads passwords and keys from `.env` and does not write them to the log.
 
 ```mermaid
 flowchart TD
-    start[Příprava] --> snow["Tabulka u_itil_event a POST /api/now/desk_events/event"]
-    snow --> gate["Uživatelé brány, politika jména a UUID, publikace API, subscription"]
-    gate --> block["Zvolené UUID na seznamu blokovaných"]
+    start[Preparation] --> snow["Table u_itil_event and POST /api/now/desk_events/event"]
+    snow --> gate["Gateway users, name and UUID policy, API publication, subscription"]
+    gate --> block["Chosen UUID on the block list"]
 ```
 
-Ve ServiceNow založí tabulku `u_itil_event` se sloupci source, node, type, resource, metric_name, event_class, severity, description, additional_info, message_key, time_of_event, state a event_number. Vlastní sloupce mají prefix `u_`. Scripted API `POST /api/now/desk_events/event` vloží řádek, stav nastaví na Ready, čas na teď a číslo ve tvaru `EM` plus časové razítko. Když už tabulka a API existují, příprava je jen zkontroluje a skript obnoví.
+In ServiceNow it creates the table `u_itil_event` with columns source, node, type, resource, metric_name, event_class, severity, description, additional_info, message_key, time_of_event, state, and event_number. Custom columns get the prefix `u_`. The scripted API `POST /api/now/desk_events/event` inserts a row, sets the state to Ready, sets the time to now, and sets the number to `EM` plus a timestamp. When the table and API already exist, preparation checks them and refreshes the script.
 
-Na bráně založí uživatele pro ukázku, nahraje politiku, která na event a incident doplní jméno a UUID, publikuje API a k němu přihlásí aplikaci tierem Gold.
+On the gateway it creates the demo users, uploads the policy that adds the name and UUID on an event and an incident, publishes the API, and subscribes an application on the Gold tier.
 
-## Logy
+## Logs
 
-Každý řádek logu je JSON: čas, služba, událost, correlation id, id zprávy, UUID uživatele a fronta. Hesla a tokeny se do logu nedostanou. Alloy je pošle do Loki a Grafana je ukáže na dashboardu. Jde filtrovat podle UUID, correlation id a fronty. Úspěšnost je poměr `sent` ku `sent` plus `failed_snow_delivery`.
+Each log line is JSON: time, service, event, correlation id, message id, user UUID, and queue. Passwords and tokens are left out of the log. Alloy ships the lines to Loki and Grafana shows them on the dashboard. They can be filtered by UUID, correlation id, and queue. The success rate is `sent` divided by `sent` plus `failed_snow_delivery`.
 
-Ukázka blokovaného uživatele v logu: `spammer`, zveřejnění do `events.spam`, vyzvednutí, `mail_sent` a `not_processed`. Panel Failed ServiceNow je u tohoto use case prázdný, protože ServiceNow se nevolalo.
+A blocked user in the log looks like this: `spammer`, a publish to `events.spam`, a consume, `mail_sent`, and `not_processed`. The Failed ServiceNow panel is empty for this use case, because ServiceNow was not called.
 
-![Log daného uživatele v Grafaně](docs/images/grafana.png)
+![A given user's log in Grafana](docs/images/grafana.png)
