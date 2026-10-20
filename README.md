@@ -1,111 +1,123 @@
-# Desk
+# Demo_project
 
-## Overview
+If you hire integrators who only know “POST to ServiceNow and parse the response,” you get fragile scripts. This repo shows the other pattern: **ITIL Event Management** with a real gateway, async workers, and queues — so spikes, retries, and bad senders do not become ticket chaos or lost messages.
 
-Desk records IT events in ServiceNow. A user authenticates at WSO2 API Manager and sends a description. Mediation attaches that user's name and UUID. The intake service checks the UUID against the block list. For anyone else, an agent reads the description, assigns a priority from 1 to 5, and publishes the message to RabbitMQ. A second service consumes the queue and creates the event.
+Callers authenticate at **WSO2 API Manager** and send a plain description. The platform classifies severity, routes by priority, and delivers an **event** to ServiceNow (not an incident). Failures stay visible: dedicated queues, structured logs in Grafana, setup separated from runtime code.
 
-Each accepted call is stored and delivered on its own. A blocked user receives an email and is not written to ServiceNow. A failed ServiceNow call is retried three times and then kept on `failed_snow_delivery`. Gateway users, the API subscription, and the ServiceNow table are created by `preparation.py` before the services start. Request and response examples are in [FLOW.md](FLOW.md).
+Full behaviour, payloads, and diagrams → **[FLOW.md](FLOW.md)**.
 
-## Technologies
+---
 
-- **WSO2 API Manager 4.5.0** is the gateway. It authenticates the user and adds the user's name and UUID to the call.
-- **Python 3.11 and Quart** are the intake service and the delivery service. Both run asynchronously.
-- **Agent (AI)** reads the event description and assigns priority 1 to 5. It works in a Thought, Action, Observation loop. The model is OpenRouter `poolside/laguna-xs-2.1:free`. When the model is unavailable, a scripted agent completes the same steps.
-- **RabbitMQ** carries messages between intake and delivery. The services talk to it through `aio-pika`.
-- **MySQL** stores messages and the list of blocked users.
-- **ServiceNow** receives an event into the `u_itil_event` table through a scripted API.
-- **SMTP mail** receives a notice when a blocked user's event is left unprocessed. In the demo, Mailpit catches that mail.
-- **Grafana, Loki, and Alloy** collect logs from both services. The dashboard filters by user, correlation id, and queue.
+## The story in one pass
 
-A given user comes in through the gateway. The gateway computes the UUID as version 5 of the username. The user does not send it and cannot override it. The intake service decides what happens from that UUID and from the text. The delivery service writes an event to ServiceNow, or sends mail that the event was not processed.
+Monitoring feeds and integrations produce **events** — early signals. ITIL treats Event Management as the stage that filters, correlates, and prioritizes those signals *before* opening incidents or changes. That is what this code models.
+
+1. **Gateway** — OAuth, API product, throttling. Mediation sets `X-User-Name` and `X-User-Uuid` (UUID v5 from the username). The client cannot spoof identity.
+2. **Ingest (Quart, async)** — persist the request, check the block list, run a **ReAct agent** (OpenRouter with a **ScriptedBrain** fallback) to assign priority 1–5, publish to RabbitMQ, return 202 quickly.
+3. **Delivery (Quart, async)** — consume from priority queues, create the event in ServiceNow, or send mail when the sender is blocked. Retry ServiceNow; after three failures, park the message on `failed_snow_delivery` — still an event, not silently morphed into something else.
+4. **Observability** — one JSON log line per step; Alloy → Loki → Grafana, filterable by user, correlation id, and queue.
 
 ```mermaid
 flowchart LR
-    user[Given user] --> gate[Gateway]
-    gate -->|"name and UUID"| intake[Intake service]
-    intake --> store[(Store)]
-    intake --> agent[Agent AI]
-    agent --> queues[(Queues)]
+    user[Caller] --> gate[WSO2 API Manager]
+    gate -->|"identity headers"| intake[Ingest service]
+    intake --> store[(MySQL)]
+    intake --> agent[ReAct agent]
+    agent --> queues[(RabbitMQ)]
     intake --> queues
     queues --> delivery[Delivery service]
-    delivery --> snow[ServiceNow]
-    delivery --> mail[Mail]
+    delivery --> snow[ServiceNow events]
+    delivery --> mail[SMTP / Mailpit]
 ```
-
-## Queues
-
-The exchange is named `events` and it is direct. The routing key is the queue name, so a message lands in exactly one queue. Messages are durable. The intake service only publishes. The delivery service consumes, with at most ten messages in flight.
-
-| Queue | Who fills it | Who reads it | What happens |
-| --- | --- | --- | --- |
-| `priority1_queue` to `priority5_queue` | intake service, from the agent (AI) priority | delivery service | The event is written to ServiceNow. |
-| `events.spam` | intake service, when the given user is blocked | delivery service | Mail `Spammer detected`. ServiceNow is not called. |
-| `failed_snow_delivery` | delivery service after the third failed ServiceNow call | nobody | The message stays on the queue, and the store keeps the same status. |
-| `events.dlq` | delivery service after the third failed mail attempt | nobody | The message stays on the queue. |
-
-![Queues in RabbitMQ](docs/images/rabbitmq.png)
-
-## Use case: the user sends an event
-
-The user calls `POST /events` and sends only a description. The body has no priority. When the UUID is not on the block list, the agent reads the description, calls `lookup_service` and `classify_priority`, and returns priority 1 to 5. 1 is the most severe. The message goes to `priority1_queue` through `priority5_queue`. The delivery service creates an event in ServiceNow and stores status `sent` with the event number. The same description sent ten times is ten events.
-
-```mermaid
-flowchart TD
-    call["POST /events with a description"] --> known{"Is the UUID blocked?"}
-    known -->|no| react["Agent AI reads the description"]
-    react --> prio["Priority 1 to 5"]
-    prio --> queue["Queue priorityN_queue"]
-    queue --> snow["Event in ServiceNow"]
-    snow --> sent["Status sent and the event number"]
-    known -->|yes| spam["Queue events.spam, the agent does not run"]
-    spam --> mail["Mail: Spammer detected. Event was not processed."]
-    mail --> stopped["Status not_processed, ServiceNow is not called"]
-```
-
-| Priority | Words in the description |
-| --- | --- |
-| 1 | outage, down, unavailable, critical, výpadek |
-| 2 | slow, latency, degraded |
-| 3 | error, fail, exception, timeout, or no strong signal |
-| 4 | warn, warning, disk |
-| 5 | info, notice, recovered, ok |
-
-When the model key is missing or the model fails, a scripted agent completes the same two steps. A priority outside 1 to 5 is stored as 3. The Thought / Action / Observation trace stays on the message.
 
 ![Overview after events were processed](docs/images/desk.png)
 
-## Use case: the user is blocked
+---
 
-The same call, with that user's UUID on the block list, does not start the agent. The message goes to `events.spam`. The delivery service sends mail with the subject `Spammer detected` and a body saying the event was not processed, plus the username, UUID, and event id. The status is `not_processed`.
+## WSO2 + queues vs. calling the Table API from every client
 
-`POST /add_spammer`, `POST /remove_spammer`, and `GET /list_spammers` manage that list. The request and response bodies are in [FLOW.md](FLOW.md).
+Table API is the right tool for admin scripts and one-off sync jobs. It is a poor **front door** when many systems emit events, load is bursty, or you need a clear security boundary.
 
-![Mail for a blocked user](docs/images/mail.png)
+| | Direct Table API | Demo_project (WSO2 → ingest → RabbitMQ → delivery) |
+| --- | --- | --- |
+| **Credentials** | ServiceNow user/token on each integrator | OAuth at WSO2; backends trust gateway headers |
+| **Spikes & rate limits** | Callers block or fail with the platform | Accept fast; queue absorbs backlog |
+| **Architecture** | Business logic and retries in N clients | Small services: accept, classify, deliver |
+| **Delivery guarantees** | Retry storms → duplicate rows or drops | Durable queues, bounded retries, inspectable dead letters |
+| **Routing** | Priority often reimplemented per client | Five priority queues + spam + failure paths |
+| **Audit** | Reconstructing “who sent what” is painful | Correlation id + user UUID on every log line |
 
-## Use case: ServiceNow does not return success
+WSO2 owns subscription and policy at the edge. RabbitMQ is the handoff between “we accepted the work” and “ServiceNow confirmed it.” That seam is where you add enrichment, correlation, or extra consumers later without changing the public API.
 
-The delivery service tries `/api/global/em/jsonv2`, then `/api/now/table/em_event`, then `/api/now/desk_events/event`. A 400, 404, or 501 on the first two paths means that path is not on the instance. Any other failure is retried. After the third failure the message moves to `failed_snow_delivery` and stays an event. Nothing consumes that queue. When mail for a blocked user fails three times, that message goes to `events.dlq`.
+---
 
-## Run
+## ITIL Event Management — what the demo encodes
+
+| Principle | How it shows up here |
+| --- | --- |
+| Events are not incidents | Delivery writes to the event table (or stops before ServiceNow for blocked senders). |
+| Triage reduces noise | AI + rules assign 1–5; routing follows queue priority. |
+| Suppression is explicit | Block list → `events.spam`, email, status `not_processed`. |
+| Failed handling stays in the event lane | `failed_snow_delivery` holds messages after retry exhaustion — for operators, not auto-incident creation. |
+
+Same description sent ten times → ten events. That is intentional (typical monitoring semantics). Idempotency helpers exist in code but are **not** wired to ingestion, so the behaviour stays honest in tests and demos.
+
+---
+
+## RabbitMQ topology
+
+Exchange `events` (direct). Routing key = queue name. Durable messages. Ingest publishes only; delivery consumes with bounded prefetch.
+
+| Queue | Role |
+| --- | --- |
+| `priority1_queue` … `priority5_queue` | Classified events → ServiceNow |
+| `events.spam` | Blocked sender → mail only |
+| `failed_snow_delivery` | ServiceNow failed after retries |
+| `events.dlq` | Mail failed after retries |
+
+![Queues in RabbitMQ](docs/images/rabbitmq.png)
+
+Blocked-user mail and ServiceNow failure paths (with screenshots) are walked through in [FLOW.md](FLOW.md).
+
+---
+
+## Tech stack
+
+| Layer | Choice |
+| --- | --- |
+| API gateway | WSO2 API Manager 4.5.0 |
+| Services | Python 3.11, Quart, aio-pika |
+| Classification | ReAct agent (`poolside/laguna-xs-2.1:free` via OpenRouter) + scripted fallback |
+| Messaging | RabbitMQ 3.13 |
+| State | MySQL (messages, block list) |
+| Target CMDB | ServiceNow (`u_itil_event` via scripted REST from `preparation.py`) |
+| Mail (demo) | Mailpit |
+| Logs | Grafana, Loki, Alloy |
+
+**Setup vs runtime:** `preparation.py` creates WSO2 users, API subscription, ServiceNow artefacts, and demo data. Application containers do not import it — provisioning stays out of the request path.
+
+---
+
+## Run it
 
 ```bash
 cp .env.example .env
 python build.py
 ```
 
-`build.py` runs the unit tests, builds every image, starts Compose, checks the three priorities and the spammer mail, then waits until preparation finishes. `python preparation.py` on its own creates the WSO2 users, the API subscription, the ServiceNow event table, and bob's spammer row.
+`build.py` runs tests, builds images, starts Compose, smoke-checks priorities and spammer mail, waits for provisioning. Setup only: `python preparation.py`.
 
-Then open:
+| UI | URL |
+| --- | --- |
+| Event board | http://localhost:8080 |
+| Mailpit | http://localhost:8025 |
+| Grafana | http://localhost:3000 |
+| RabbitMQ management | http://localhost:15672 (`events` / `events`) |
+| WSO2 Publisher | https://localhost:9443/publisher (`admin` / `admin`) |
 
-- Desk: http://localhost:8080
-- Mailpit: http://localhost:8025
-- Grafana: http://localhost:3000 (anonymous admin, Loki is already attached)
-- RabbitMQ: http://localhost:15672 (`events` / `events`)
-- WSO2 Publisher: https://localhost:9443/publisher (`admin` / `admin`)
+WSO2 needs ~4 GB RAM and a few minutes to start. The `provision` container registers `alice` / `bob`, publishes the API, applies mediation — check logs for UUIDs and OAuth client id.
 
-`docker compose up` also starts WSO2, which needs about 4 GB of RAM and a few minutes. After it is healthy, the `provision` container creates users `alice` and `bob`, publishes `POST /events`, and attaches the mediation. Passwords for those two users come from `.env`. The container log prints their UUIDs and the application client id.
-
-Call the gateway with the password grant so the mediation can see the username:
+**Through the gateway:**
 
 ```bash
 curl -k -u "$CLIENT_ID:$CLIENT_SECRET" \
@@ -120,19 +132,11 @@ curl -k -H "Authorization: Bearer $TOKEN" \
   https://localhost:8243/desk/v1/events
 ```
 
-`make demo` talks to ingest directly with the same UUIDs the mediation would set. It sends three descriptions and one event from `bob` after blocking that UUID. The desk shows the trace and the queue. Mailpit shows the spammer mail.
+`make demo` calls ingest directly with the same UUIDs mediation would inject (three normal events + one blocked user).
 
-## Model
+**Env:** `OPENROUTER_API_KEY` optional (fallback brain). ServiceNow vars optional (in-memory mock for local delivery).
 
-`OpenAICompatibleBrain` calls OpenRouter model `poolside/laguna-xs-2.1:free`. Put the key in `OPENROUTER_API_KEY`. It is not committed. If the key is missing or the free quota fails, `ScriptedBrain` runs the same loop from the wording of the description.
-
-## ServiceNow
-
-Set `SERVICENOW_BASE_URL`, `SERVICENOW_USER`, and `SERVICENOW_PASSWORD` in `.env`. Events go to `/api/global/em/jsonv2`, then to the `em_event` table. This instance has neither, so `python preparation.py` creates `u_itil_event` and `POST /api/now/desk_events/event`. A failed event stays an event: it is retried and then parked on `failed_snow_delivery`. Without those variables the delivery service uses an in-memory mock (`EM0010001`, `INC0010001`).
-
-## Logs
-
-`logging_setup.py` writes one JSON object per line to stdout: time, service, event, correlation id, message id, user UUID, and queue. Passwords are dropped. Alloy ships container stdout to Loki. In Grafana, filter `{service=~"ingest|delivery"}` or search a `correlation_id`.
+---
 
 ## Tests
 
@@ -141,8 +145,14 @@ python -m pip install -e ".[test]"
 make test
 ```
 
-The tests do not start WSO2, MySQL, or Grafana. They use an in-memory store and broker.
+21 pytest cases; in-memory store and broker — no WSO2, MySQL, or Grafana required.
 
-## Layout
+| File | Responsibility |
+| --- | --- |
+| `api.py` / `delivery.py` | HTTP ingest and queue consumer |
+| `agents.py` | ReAct loop |
+| `rabbitmq.py` | Topology and I/O |
+| `servicenow.py` | Event push (live + mock) |
+| `logging_setup.py` | Structured JSON to stdout |
 
-`api.py` and `delivery.py` are the two processes. `agents.py` is the loop. `rabbitmq.py` is `aio_pika`. `servicenow.py` only sends events. `mail.py`, `store.py`, `decorators.py`, and `logging_setup.py` are the rest of the runtime. `preparation.py` creates the WSO2 users, the API subscription, the ServiceNow event table, and bob's spammer row. `@idempotent` is implemented and tested, and it is not wrapped around event delivery: a repeated payload is a new event.
+![Grafana](docs/images/grafana.png)
