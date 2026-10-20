@@ -4,19 +4,17 @@
 
 ## Overview
 
+**Demo_project** is an **ITIL Event Management** pipeline in front of ServiceNow — not a shortcut to the Table API. Callers authenticate at **WSO2 API Manager** and post a JSON event payload; a **ReAct agent** (with a scripted fallback) reads the text and assigns priority **1–5**; **RabbitMQ** buffers the handoff; a delivery worker writes an **event** to ServiceNow or handles suppression and failures on their own queues. Identity comes from the gateway, not from the client body.
+
+The point is to show that path with the awkward cases still visible: the same payload twice is two events; a **blocked sender** never reaches ServiceNow (spam queue → mail, `not_processed`); ServiceNow errors retry and then land on **`failed_snow_delivery`** without being rewritten as incidents; the agent trace stays on the message for the board and logs. Platform setup lives in **`preparation.py`**, not in the request hot path. Deeper behaviour → **[FLOW.md](FLOW.md)**.
+
 ![Event flow — Caller → WSO2 → Ingest → ReAct agent → RabbitMQ → Delivery → ServiceNow](docs/images/flow.gif)
 
-**[▶ Interactive flow tour](https://matpet00.github.io/Demo_project/flow.html)** — click any step, use ← →, or **Play tour**. Includes **Standard event** and **Blocked sender (bob → events.spam)** branches with captions at each stage.
+**[▶ Interactive flow tour](https://matpet00.github.io/Demo_project/flow.html)** — click each step, use ← →, or **Play tour**. Standard event and **blocked sender (bob → events.spam)** branches.
 
 Screenshots montage: [overview.gif](docs/images/overview.gif)
 
-If you hire integrators who only know “POST to ServiceNow and parse the response,” you get fragile scripts. This repo shows the other pattern: **ITIL Event Management** with a real gateway, async workers, queues — and an **AI ReAct agent** that triages free-text events into priority **1–5** before anything hits ServiceNow.
-
-Callers authenticate at **WSO2 API Manager** and post a **JSON event payload** (`description` or `short_description`, plus optional `X-Correlation-Id`). The gateway adds identity headers; ingest validates the body, runs the agent (or a deterministic fallback), routes to a priority queue, and delivery writes a full **event record** (not an incident). The Thought / Action / Observation trace is stored on the message and visible on the event board. Failures stay visible: dedicated queues, structured logs in Grafana, setup separated from runtime code.
-
 **Quick review without Docker:** `python -m pip install -e ".[test]" && make test` (22 pytest cases, in-memory broker and store).
-
-Full behaviour, payloads, and diagrams → **[FLOW.md](FLOW.md)**.
 
 ---
 
