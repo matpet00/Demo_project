@@ -120,41 +120,20 @@ Blocked-user mail and ServiceNow failure paths (with screenshots) are walked thr
 
 ## Run it
 
+**Reviewing the project without installing anything:** use the [interactive flow tour](https://matpet00.github.io/Demo_project/flow.html) and `make test` (see [Tests](#tests)). That is enough to follow the architecture and behaviour.
+
+**Full stack (optional, for developers with Docker):**
+
 ```bash
 cp .env.example .env
 python build.py
 ```
 
-`build.py` runs tests, builds images, starts Compose, smoke-checks priorities and spammer mail, waits for provisioning. Setup only: `python preparation.py`.
+`build.py` runs unit tests, builds images, starts Compose, smoke-checks priority routing and spammer mail, then waits for provisioning. One-shot setup without the long bring-up: `python preparation.py` (WSO2 users, API subscription, ServiceNow table, demo block list).
 
-| UI | URL |
-| --- | --- |
-| Event board | http://localhost:8080 |
-| Mailpit | http://localhost:8025 |
-| Grafana | http://localhost:3000 |
-| RabbitMQ management | http://localhost:15672 (`events` / `events`) |
-| WSO2 Publisher | https://localhost:9443/publisher (`admin` / `admin`) |
+The Compose stack includes WSO2 API Manager (~4 GB RAM, slow start), RabbitMQ, MySQL, ingest and delivery services, Grafana/Loki/Alloy, and Mailpit. After everything is healthy on **your machine**, open the event board, Mailpit, Grafana, and RabbitMQ management on the ports defined in `docker-compose.yml`. Gateway `curl` examples and payloads are in **[FLOW.md](FLOW.md)**.
 
-WSO2 needs ~4 GB RAM and a few minutes to start. The `provision` container registers `alice` / `bob`, publishes the API, applies mediation — check logs for UUIDs and OAuth client id.
-
-**Through the gateway:**
-
-```bash
-curl -k -u "$CLIENT_ID:$CLIENT_SECRET" \
-  -d "grant_type=password&username=alice&password=$WSO2_ALICE_PASSWORD" \
-  https://localhost:9443/oauth2/token
-```
-
-```bash
-curl -k -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"description":"checkout-api is down"}' \
-  https://localhost:8243/desk/v1/events
-```
-
-`make demo` calls ingest directly with the same UUIDs mediation would inject (three normal events + one blocked user).
-
-**Env:** `OPENROUTER_API_KEY` optional (fallback brain). ServiceNow vars optional (in-memory mock for local delivery).
+`make demo` posts sample events (including a blocked user) against a running ingest service. Optional env: `OPENROUTER_API_KEY`, ServiceNow credentials (mock delivery works without them).
 
 ---
 
