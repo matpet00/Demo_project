@@ -10,9 +10,9 @@
 
 Screenshots montage: [overview.gif](docs/images/overview.gif)
 
-If you hire integrators who only know “POST to ServiceNow and parse the response,” you get fragile scripts. This repo shows the other pattern: **ITIL Event Management** with a real gateway, async workers, and queues — so spikes, retries, and bad senders do not become ticket chaos or lost messages.
+If you hire integrators who only know “POST to ServiceNow and parse the response,” you get fragile scripts. This repo shows the other pattern: **ITIL Event Management** with a real gateway, async workers, queues — and an **AI ReAct agent** that triages free-text events into priority **1–5** before anything hits ServiceNow.
 
-Callers authenticate at **WSO2 API Manager** and post a **JSON event payload** (`description` or `short_description`, plus optional `X-Correlation-Id`). The gateway adds identity headers; ingest validates the body, classifies severity, routes by priority, and delivers a full **event record** to ServiceNow (not an incident). Failures stay visible: dedicated queues, structured logs in Grafana, setup separated from runtime code.
+Callers authenticate at **WSO2 API Manager** and post a **JSON event payload** (`description` or `short_description`, plus optional `X-Correlation-Id`). The gateway adds identity headers; ingest validates the body, runs the agent (or a deterministic fallback), routes to a priority queue, and delivery writes a full **event record** (not an incident). The Thought / Action / Observation trace is stored on the message and visible on the event board. Failures stay visible: dedicated queues, structured logs in Grafana, setup separated from runtime code.
 
 **Quick review without Docker:** `python -m pip install -e ".[test]" && make test` (22 pytest cases, in-memory broker and store).
 
@@ -54,6 +54,23 @@ flowchart LR
 
 ---
 
+## AI triage — ReAct agent (not a chatbot on the side)
+
+Priority is **never** sent by the client. Ingest hands the event text to a **ReAct loop** in `agents.py`: the model (or fallback) alternates **Thought → Action → Observation** until it can assign **1–5** and pick `priority1_queue` … `priority5_queue`.
+
+| | |
+| --- | --- |
+| **Model** | OpenRouter `poolside/laguna-xs-2.1:free` when `OPENROUTER_API_KEY` is set |
+| **Tools** | `lookup_service(description)` — maps wording to checkout-api, edge-proxy, orders-db, … |
+| | `classify_priority(description)` — keyword rules suggest severity 1–5 |
+| **Fallback** | `ScriptedBrain` runs the same two tool calls if the key is missing or the API fails — demos and CI stay green |
+| **Observability** | Full trace on the message; the event board shows each step |
+| **When AI is skipped** | Blocked UUID → `events.spam` with **no** agent run (suppression beats classification) |
+
+This is deliberate integration AI: bounded tools, testable fallback, no “LLM writes directly to ServiceNow.” The interactive tour has a dedicated **ReAct agent** step; unit tests cover both model-shaped and scripted paths.
+
+---
+
 ## WSO2 + queues vs. calling the Table API from every client
 
 Table API is the right tool for admin scripts and one-off sync jobs. It is a poor **front door** when many systems emit events, load is bursty, or you need a clear security boundary.
@@ -76,7 +93,7 @@ WSO2 owns subscription and policy at the edge. RabbitMQ is the handoff between �
 | Principle | How it shows up here |
 | --- | --- |
 | Events are not incidents | Delivery writes to the event table (or stops before ServiceNow for blocked senders). |
-| Triage reduces noise | AI + rules assign 1–5; routing follows queue priority. |
+| Triage reduces noise | ReAct agent + tools assign 1–5; routing follows queue priority. |
 | Suppression is explicit | Block list → `events.spam`, email, status `not_processed`. |
 | Failed handling stays in the event lane | `failed_snow_delivery` holds messages after retry exhaustion — for operators, not auto-incident creation. |
 
@@ -107,7 +124,7 @@ Blocked-user mail and ServiceNow failure paths (with screenshots) are walked thr
 | --- | --- |
 | API gateway | WSO2 API Manager 4.5.0 |
 | Services | Python 3.11, Quart, aio-pika |
-| Classification | ReAct agent (`poolside/laguna-xs-2.1:free` via OpenRouter) + scripted fallback |
+| **AI classification** | **ReAct agent** — OpenRouter + tool calls; **ScriptedBrain** fallback (`agents.py`) |
 | Messaging | RabbitMQ 3.13 |
 | State | MySQL (messages, block list) |
 | Target CMDB | ServiceNow (`u_itil_event` via scripted REST from `preparation.py`) |
@@ -149,7 +166,7 @@ make test
 | File | Responsibility |
 | --- | --- |
 | `api.py` / `delivery.py` | HTTP ingest and queue consumer |
-| `agents.py` | ReAct loop |
+| `agents.py` | ReAct loop, OpenRouter brain, ScriptedBrain fallback |
 | `rabbitmq.py` | Topology and I/O |
 | `servicenow.py` | Event push (live + mock) |
 | `logging_setup.py` | Structured JSON to stdout |
