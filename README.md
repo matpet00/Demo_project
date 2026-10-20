@@ -2,9 +2,17 @@
 
 ## Overview
 
-This project is an event intake in front of ServiceNow. A user signs in at an API gateway, one service decides what the event is, a queue carries that decision, and a second service delivers it. The application does not own the user directory and it does not invent a ticket when delivery fails. It takes an authenticated call and either writes an event, or it stops and says why.
+Desk is a small event pipeline in front of ServiceNow. A caller signs in at WSO2 API Manager and posts a description. The gateway stamps their name and UUID. An AI agent reads that text and assigns a priority from 1 to 5. RabbitMQ carries the message, and a second service writes the event into ServiceNow. A blocked caller is stopped on the way and gets an email instead.
 
-It is meant to show that path with the awkward cases left in the open. The gateway, not the caller, sets the user identity. An AI agent reads only the description and assigns a priority, and the same text sent again is a new event. A blocked user never becomes a ServiceNow record. A failed delivery is retried and then parked on its own queue, still as an event. Users, the API subscription, and the event table are created once, before traffic. The running services only accept, route, and deliver. Routes, payloads, and the block-list responses are in [FLOW.md](FLOW.md).
+It is built to show a complete path, including the parts that usually stay hidden. Identity is added at the gateway. The same description sent ten times is ten events. A ServiceNow failure is retried and then left on its own queue, where it can be inspected. Logs are JSON and can be filtered in Grafana by user, correlation id, and queue. Users, the API subscription, and the ServiceNow table are created once, before any traffic. Request and response examples are in [FLOW.md](FLOW.md).
+
+What it is meant to show:
+
+- an API gateway in front of application code, with the caller identity added in mediation
+- an AI agent that chooses a priority from free text, and a scripted fallback when the model is unavailable
+- async Python services with RabbitMQ between the decision and the delivery
+- a real write into ServiceNow, including a custom event table when Event Management is not installed
+- failure handling and logs that stay visible after the call returns
 
 ## Technologies
 
