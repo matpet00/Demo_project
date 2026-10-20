@@ -1,8 +1,10 @@
 # Desk
 
-A caller authenticates at WSO2 API Manager and posts an event. The gateway adds the user's name and UUID. One async Python service then decides what happens. An AI agent reads the description and assigns priority 1–5, and a blocked user is stopped before any ticket exists. RabbitMQ carries every accepted call as its own message. A second service delivers it to ServiceNow, or sends mail when the user is blocked.
+## Overview
 
-The project is there to show that path with the failure cases left visible. The same description sent ten times becomes ten events. A ServiceNow error is retried and then parked on its own queue, and it is not rewritten as an incident. A blocked user gets an email that the event was not processed. Logs are one JSON line each and show up in Grafana, filterable by user, correlation id, and queue. Users, the API subscription, and the ServiceNow event table are created once by `preparation.py`, so the running services only accept, route, and deliver. Routes, payloads, and the block-list responses are in [FLOW.md](FLOW.md).
+This project is an event intake in front of ServiceNow. A user signs in at an API gateway, one service decides what the event is, a queue carries that decision, and a second service delivers it. The application does not own the user directory and it does not invent a ticket when delivery fails. It takes an authenticated call and either writes an event, or it stops and says why.
+
+It is meant to show that path with the awkward cases left in the open. The gateway, not the caller, sets the user identity. An AI agent reads only the description and assigns a priority, and the same text sent again is a new event. A blocked user never becomes a ServiceNow record. A failed delivery is retried and then parked on its own queue, still as an event. Users, the API subscription, and the event table are created once, before traffic. The running services only accept, route, and deliver. Routes, payloads, and the block-list responses are in [FLOW.md](FLOW.md).
 
 ## Technologies
 
