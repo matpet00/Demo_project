@@ -282,8 +282,8 @@
     <div class="layout">
       <div>
         <div class="path-toggle" id="pathToggle">
-          <button type="button" class="active" data-mode="normal">Standard event (alice)</button>
-          <button type="button" data-mode="spam">Blocked sender (bob → spam)</button>
+          <button type="button" class="active" data-mode="normal">Standard event</button>
+          <button type="button" data-mode="spam">Blocked sender</button>
         </div>
         <svg class="pipeline" viewBox="0 0 1184 380" id="svg" role="img" aria-label="Event pipeline diagram">
           <path id="pathMain" class="track" />
@@ -328,7 +328,7 @@
 
     const STAGES_NORMAL = [
       {
-        id: "client", x: 72, y: 200, label: "Caller", sub: "alice",
+        id: "client", x: 72, y: 200, label: "Caller", sub: "trusted sender",
         title: "1. API call leaves the client",
         detail: "Standard path: a trusted sender posts an event through the gateway.",
         bullets: [
@@ -351,7 +351,7 @@
       {
         id: "ingest", x: 420, y: 200, label: "Ingest", sub: "Quart · api.py",
         title: "3. Ingest — UUID not blocked",
-        detail: "Message saved; ReAct triage runs because alice is not on the block list.",
+        detail: "Message saved; ReAct triage runs because this UUID is not on the block list.",
         bullets: [
           "202 Accepted · row in MySQL · correlation id.",
           "Block list miss → agent runs.",
@@ -399,9 +399,9 @@
 
     const STAGES_SPAM = [
       {
-        id: "client", x: 72, y: 200, label: "Caller", sub: "bob (blocked)",
-        title: "1. Same API call — blocked user",
-        detail: "bob uses the same POST /events contract, but their mediation UUID is on the block list.",
+        id: "client", x: 72, y: 200, label: "Caller", sub: "blocked sender",
+        title: "1. Same API call — blocked sender",
+        detail: "Same POST /events contract, but the mediation UUID is on the block list.",
         bullets: [
           "Same gateway and JSON payload shape as a normal sender.",
           "Identity still comes from WSO2 headers, not the body.",
@@ -409,8 +409,8 @@
       },
       {
         id: "wso2", x: 240, y: 200, label: "WSO2", sub: "API Manager",
-        title: "2. Gateway still authenticates bob",
-        detail: "OAuth succeeds; mediation sets X-User-Name: bob and the stable UUID.",
+        title: "2. Gateway still authenticates the caller",
+        detail: "OAuth succeeds; mediation sets X-User-Name and the stable UUID.",
         bullets: [
           "Being blocked is enforced in ingest, not at the gateway.",
           "Useful for ITIL suppression without sharing SN credentials.",
@@ -550,7 +550,7 @@
       const base = ['{ "description": "checkout-api is down" }'];
       const normal = {
         client: [],
-        wso2: ["— gateway adds —", "X-User-Name: alice", "X-User-Uuid: ••••"],
+        wso2: ["— gateway adds —", "X-User-Name: …", "X-User-Uuid: ••••"],
         ingest: ["202 · saved · MySQL", "correlation_id assigned"],
         agent: ["ReAct: lookup_service →", "classify_priority → P1"],
         rabbit: ["→ priority1_queue", "exchange: events"],
@@ -558,8 +558,8 @@
         snow: ["status: sent", "event EM001…"],
       };
       const spam = {
-        client: ["sender: bob (blocked UUID)"],
-        wso2: ["X-User-Name: bob", "X-User-Uuid: ••••"],
+        client: ["sender: blocked UUID"],
+        wso2: ["X-User-Name: …", "X-User-Uuid: ••••"],
         ingest: ["block list HIT", "agent skipped", "→ events.spam"],
         spamq: ["queue: events.spam"],
         delivery: ["Spammer detected (mail)", "ServiceNow not called"],
@@ -622,7 +622,7 @@
 
     function showBranchInterstitial() {
       document.getElementById("stepBadge").textContent = "Branch";
-      document.getElementById("stageTitle").textContent = "Blocked sender path (bob)";
+      document.getElementById("stageTitle").textContent = "Blocked sender path";
       document.getElementById("stageDetail").textContent =
         "Same POST /events through WSO2 — ingest matches the UUID on the block list, skips ReAct, and publishes to events.spam.";
       document.getElementById("stageBullets").innerHTML = [

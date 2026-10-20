@@ -10,7 +10,7 @@ The point is to show that path with the awkward cases still visible: the same pa
 
 ![Event flow — Caller → WSO2 → Ingest → ReAct agent → RabbitMQ → Delivery → ServiceNow](docs/images/flow.gif)
 
-**[▶ Interactive flow tour](https://matpet00.github.io/Demo_project/flow.html)** — click each step, use ← →, or **Play tour**. Standard event and **blocked sender (bob → events.spam)** branches.
+**[▶ Interactive flow tour](https://matpet00.github.io/Demo_project/flow.html)** — click each step, use ← →, or **Play tour**. **Standard event** and **blocked sender** (`events.spam`) branches with captions at each stage.
 
 Screenshots montage: [overview.gif](docs/images/overview.gif)
 
