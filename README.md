@@ -82,7 +82,7 @@ Table API is the right tool for admin scripts and one-off sync jobs. It is a poo
 | **Routing** | Priority often reimplemented per client | Five priority queues + spam + failure paths |
 | **Audit** | Reconstructing “who sent what” is painful | Correlation id + user UUID on every log line |
 
-WSO2 owns subscription and policy at the edge. RabbitMQ is the handoff between “we accepted the work” and “ServiceNow confirmed it.” That seam is where you add enrichment, correlation, or extra consumers later without changing the public API.
+WSO2 owns subscription and policy at the edge. RabbitMQ is the handoff between “we accepted the work” and “ServiceNow confirmed it.” That seam is where enrichment, correlation, or extra consumers later were added without changing the public API.
 
 ---
 
